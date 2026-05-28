@@ -44,7 +44,7 @@ Full design doc: @docs/design.md
 
 ## Build Phases
 We are building this app incrementally. Each phase adds one feature layer.
-Current phase: Phase 1 complete — core shell + 3 TRANSFORM challenges in `SqlForge.jsx`
+Current phase: Phase 2 — Animation system + ORDER BY/LIMIT/DISTINCT
 - Phase 1: Core shell + Layer 1 TRANSFORM challenges ✓
 - Phase 2: Animation system
 - Phase 3: Operation Builder
