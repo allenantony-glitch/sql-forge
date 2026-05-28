@@ -1143,15 +1143,25 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
 // ============================================================
 // OPERATION BUILDER — palette, pipeline, reference bar
 // ============================================================
+//
+// Drag state lives in a module-level variable instead of dataTransfer:
+// sandboxed iframes (like Claude.ai's artifact preview) silently strip
+// custom MIME types from dataTransfer, so a fallback path that reads
+// from a shared variable is far more reliable. We still call setData
+// with text/plain because some browsers refuse to start a drag without
+// any payload.
+
+let activeDrag = null; // { opId, source: "palette" | "pipeline", fromIdx?: number }
 
 function PaletteBlock({ opId, locked }) {
   const op = OPERATIONS[opId];
   const onDragStart = (e) => {
     if (locked) { e.preventDefault(); return; }
-    e.dataTransfer.setData("application/op-id", opId);
-    e.dataTransfer.setData("application/op-source", "palette");
-    e.dataTransfer.effectAllowed = "copy";
+    activeDrag = { opId, source: "palette" };
+    try { e.dataTransfer.setData("text/plain", opId); } catch {}
+    e.dataTransfer.effectAllowed = "copyMove";
   };
+  const onDragEnd = () => { activeDrag = null; };
   if (locked) {
     return (
       <div
@@ -1168,6 +1178,7 @@ function PaletteBlock({ opId, locked }) {
     <div
       draggable
       onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 text-xs cursor-grab active:cursor-grabbing hover:bg-cyan-500/20 hover:border-cyan-400/60 transition-colors select-none"
     >
       <span>{op.icon}</span>
@@ -1197,15 +1208,16 @@ function PipelineSlot({ index, opId, slotStatus, onRemove, onDropOp, isLast, dro
 
   const onDragStartFromSlot = (e) => {
     if (empty) return;
-    e.dataTransfer.setData("application/op-id", opId);
-    e.dataTransfer.setData("application/op-source", "pipeline");
-    e.dataTransfer.setData("application/op-from-idx", String(index));
-    e.dataTransfer.effectAllowed = "move";
+    activeDrag = { opId, source: "pipeline", fromIdx: index };
+    try { e.dataTransfer.setData("text/plain", opId); } catch {}
+    e.dataTransfer.effectAllowed = "copyMove";
   };
+  const onDragEndFromSlot = () => { activeDrag = null; };
 
   const allowDrop = (e) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    // dropEffect must be compatible with effectAllowed; "copy" satisfies "copyMove".
+    e.dataTransfer.dropEffect = "copy";
     onDragOverSlot(index);
   };
 
@@ -1237,6 +1249,7 @@ function PipelineSlot({ index, opId, slotStatus, onRemove, onDropOp, isLast, dro
           <div
             draggable
             onDragStart={onDragStartFromSlot}
+            onDragEnd={onDragEndFromSlot}
             className="px-4 py-3 flex items-center gap-3 cursor-grab active:cursor-grabbing"
           >
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-800 text-stone-400 text-[10px] font-mono">
@@ -1285,22 +1298,29 @@ function PipelineBuilder({ pipeline, onChange, validation, expectedPipeline, onC
   const [dropHoverIdx, setDropHoverIdx] = useState(null);
 
   const handleDrop = (e, idx) => {
-    const opId = e.dataTransfer.getData("application/op-id");
-    const source = e.dataTransfer.getData("application/op-source");
-    const fromIdxStr = e.dataTransfer.getData("application/op-from-idx");
-    if (!opId) return;
+    // Primary path: module-level state set during dragstart.
+    // Fallback: text/plain payload (in case dragstart happened in a context
+    // that mutated/lost the module variable — e.g. fast-refresh during dev).
+    let drag = activeDrag;
+    if (!drag) {
+      const opId = e.dataTransfer.getData("text/plain");
+      if (!opId || !OPERATIONS[opId]) return;
+      drag = { opId, source: "palette" };
+    }
+    activeDrag = null;
 
-    if (source === "pipeline") {
-      const from = parseInt(fromIdxStr, 10);
-      if (Number.isNaN(from) || from === idx) return;
+    if (drag.source === "pipeline") {
+      const from = drag.fromIdx;
+      if (from == null || from === idx) return;
       const next = [...pipeline];
       const [moved] = next.splice(from, 1);
       const insertAt = from < idx ? idx - 1 : idx;
       next.splice(Math.min(insertAt, next.length), 0, moved);
       onChange(next);
     } else {
+      if (!OPERATIONS[drag.opId]) return;
       const next = [...pipeline];
-      next.splice(Math.min(idx, next.length), 0, opId);
+      next.splice(Math.min(idx, next.length), 0, drag.opId);
       onChange(next);
     }
   };
