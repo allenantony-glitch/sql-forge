@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Lock, Check, ChevronRight, Play, Pickaxe, Gem } from "lucide-react";
+import { Lock, Check, ChevronRight, Play, Pickaxe, Gem, X, Plus, AlertTriangle, Wrench } from "lucide-react";
 
 // ============================================================
 // SEED DATA — the streaming-platform "shows" table (15 rows)
@@ -35,6 +35,7 @@ const CHALLENGES = [
   {
     id: "1.1",
     layer: 1,
+    type: "transform",
     title: "The Full Vein",
     description: "Reveal every row and every column of the shows table.",
     targetSql: "SELECT * FROM shows",
@@ -43,6 +44,7 @@ const CHALLENGES = [
   {
     id: "1.2",
     layer: 1,
+    type: "transform",
     title: "Narrow the Vein",
     description: "Show every row, but only the name and imdb_rating columns.",
     targetSql: "SELECT name, imdb_rating FROM shows",
@@ -51,12 +53,117 @@ const CHALLENGES = [
   {
     id: "1.3",
     layer: 1,
+    type: "transform",
     title: "The Filter",
     description: "Reveal only shows with an imdb_rating above 8.5.",
     targetSql: "SELECT * FROM shows WHERE imdb_rating > 8.5",
     why: "WHERE filters rows before the result is assembled. The database checks each row against the condition.",
   },
+  {
+    id: "1.4",
+    layer: 1,
+    type: "transform",
+    title: "Double Filter",
+    description: "Find shows certified 'A' that premiered in 2015 or later.",
+    targetSql: "SELECT * FROM shows WHERE certificate = 'A' AND premiere_year >= 2015",
+    why: "AND means both conditions must be true. Each row must pass BOTH checks to survive.",
+  },
+  {
+    id: "1.5",
+    layer: 1,
+    type: "transform",
+    title: "The Ranking",
+    description: "Reveal the five highest-rated shows. Only their name and rating.",
+    targetSql: "SELECT name, imdb_rating FROM shows ORDER BY imdb_rating DESC LIMIT 5",
+    why: "ORDER BY sorts results — DESC means highest first. LIMIT caps how many rows you get back. Together they give you 'top N' queries.",
+  },
+  {
+    id: "1.6",
+    layer: 1,
+    type: "operation_builder",
+    title: "Build the Pipeline",
+    description: "Build the transformation pipeline, then write the SQL. Show the top 3 shows by rating — only name and imdb_rating.",
+    expectedPipeline: ["select", "sort", "limit"],
+    targetSql: "SELECT name, imdb_rating FROM shows ORDER BY imdb_rating DESC LIMIT 3",
+    why: "You built the plan first, then wrote the code. In real SQL work, planning the operations before writing syntax prevents mistakes.",
+  },
+  {
+    id: "1.7",
+    layer: 1,
+    type: "operation_builder",
+    title: "The Right Order",
+    description: "Build the pipeline, then write the SQL. Find shows rated above 7.0, show only their name, sorted alphabetically.",
+    expectedPipeline: ["filter", "select", "sort"],
+    targetSql: "SELECT name FROM shows WHERE imdb_rating > 7.0 ORDER BY name ASC",
+    why: "The execution order matters: filter first (WHERE), then pick columns (SELECT), then sort (ORDER BY). You just built that order with your hands.",
+  },
 ];
+
+// ============================================================
+// OPERATION BLOCKS — palette for the Operation Builder
+// ============================================================
+
+const OPERATIONS = {
+  filter: { id: "filter", icon: "🔽", label: "FILTER ROWS",     hint: "WHERE",    layer: 1 },
+  select: { id: "select", icon: "📐", label: "SELECT COLUMNS",  hint: "SELECT",   layer: 1 },
+  sort:   { id: "sort",   icon: "↕️", label: "SORT",            hint: "ORDER BY", layer: 1 },
+  limit:  { id: "limit",  icon: "✂️", label: "LIMIT",           hint: "LIMIT",    layer: 1 },
+  group:  { id: "group",  icon: "📊", label: "GROUP & COMPUTE", hint: "GROUP BY", layer: 2 },
+  having: { id: "having", icon: "🛡️", label: "FILTER GROUPS",   hint: "HAVING",   layer: 2 },
+  join:   { id: "join",   icon: "🔗", label: "CONNECT TABLES",  hint: "JOIN",     layer: 3 },
+  window: { id: "window", icon: "🪟", label: "WINDOW COMPUTE",  hint: "OVER ()",  layer: 5 },
+};
+
+const OPERATIONS_LIST = ["filter", "select", "sort", "limit", "group", "having", "join", "window"];
+const UNLOCKED_THROUGH_LAYER = 1;
+
+// Canonical SQL execution order rank — lower = earlier.
+const CANONICAL_RANK = { filter: 0, select: 1, sort: 2, limit: 3 };
+
+function validatePipeline(ops) {
+  const seen = new Set();
+  const slots = ops.map((op, i) => {
+    if (seen.has(op)) {
+      return { status: "error", message: `Only one ${OPERATIONS[op].label} block is needed.` };
+    }
+    seen.add(op);
+
+    let warning = null;
+    for (let j = i + 1; j < ops.length; j++) {
+      const next = ops[j];
+      // Allowed exception: SORT before FILTER is fine (semantically equivalent here)
+      if (op === "sort" && next === "filter") continue;
+
+      if (op === "limit" && next === "sort") {
+        warning = "LIMIT without SORT first gives arbitrary rows — are you sure?";
+        break;
+      }
+      if (op === "select" && next === "filter") {
+        warning = "Filtering after selecting may lose the column your filter needs.";
+        break;
+      }
+      if (
+        CANONICAL_RANK[op] != null &&
+        CANONICAL_RANK[next] != null &&
+        CANONICAL_RANK[next] < CANONICAL_RANK[op]
+      ) {
+        warning = `${OPERATIONS[op].label} usually comes after ${OPERATIONS[next].label}.`;
+        break;
+      }
+    }
+    return warning ? { status: "warning", message: warning } : { status: "ok", message: null };
+  });
+  const hasErrors = slots.some((s) => s.status === "error");
+  return { slots, hasErrors };
+}
+
+function pipelineMatchesExpected(ops, expected) {
+  if (!expected) return false;
+  if (ops.length !== expected.length) return false;
+  const a = [...ops].sort().join(",");
+  const b = [...expected].sort().join(",");
+  return a === b;
+}
 
 const LAYERS = [
   { num: 1, name: "The Surface",    subtitle: "See and Filter",         unlocked: true  },
@@ -128,7 +235,15 @@ function parseQuery(sql) {
     pos++;
   };
 
+  const isKw = (kw, offset = 0) => {
+    const t = peek(offset);
+    return !!(t && t.type === "ident" && t.value === kw);
+  };
+
   expectKeyword("select");
+
+  let distinct = false;
+  if (isKw("distinct")) { consume(); distinct = true; }
 
   const columns = [];
   if (peek() && peek().type === "star") {
@@ -150,9 +265,38 @@ function parseQuery(sql) {
   const table = consume().value;
 
   let where = null;
-  if (peek() && peek().type === "ident" && peek().value === "where") {
+  if (isKw("where")) {
     consume();
     where = parseOr();
+  }
+
+  let orderBy = null;
+  if (isKw("order")) {
+    consume();
+    if (!isKw("by")) throw new Error("Expected BY after ORDER");
+    consume();
+    orderBy = [];
+    while (true) {
+      const colTok = peek();
+      if (!colTok || colTok.type !== "ident") throw new Error("Expected column name in ORDER BY");
+      consume();
+      let direction = "asc";
+      if (isKw("asc")) { consume(); }
+      else if (isKw("desc")) { consume(); direction = "desc"; }
+      orderBy.push({ column: colTok.value, direction });
+      if (peek() && peek().type === "comma") { consume(); continue; }
+      break;
+    }
+  }
+
+  let limit = null;
+  if (isKw("limit")) {
+    consume();
+    const numTok = peek();
+    if (!numTok || numTok.type !== "number") throw new Error("LIMIT expects a number");
+    consume();
+    if (numTok.value < 0) throw new Error("LIMIT must be non-negative");
+    limit = Math.floor(numTok.value);
   }
 
   if (peek()) throw new Error(`Unexpected token after query: ${peek().raw || peek().value || peek().type}`);
@@ -247,7 +391,22 @@ function parseQuery(sql) {
     throw new Error(`Unexpected token in condition: ${next.raw || next.value || next.type}`);
   }
 
-  return { columns, table, where };
+  return { columns, table, where, orderBy, limit, distinct };
+}
+
+function sortRowsBy(rows, orderBy) {
+  return [...rows].sort((a, b) => {
+    for (const { column, direction } of orderBy) {
+      const av = a[column];
+      const bv = b[column];
+      if (av == null && bv == null) continue;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (av < bv) return direction === "desc" ? 1 : -1;
+      if (av > bv) return direction === "desc" ? -1 : 1;
+    }
+    return 0;
+  });
 }
 
 function evalExpr(expr, row) {
@@ -310,11 +469,35 @@ function executeQuery(sql, tables) {
     outCols = parsed.columns;
   }
 
-  const outRows = rows.map((row) => {
+  let outRows = rows.map((row) => {
     const o = {};
     for (const c of outCols) o[c] = row[c];
     return o;
   });
+
+  if (parsed.distinct) {
+    const seen = new Set();
+    outRows = outRows.filter((row) => {
+      const key = rowKey(row, outCols);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  if (parsed.orderBy && parsed.orderBy.length) {
+    for (const { column } of parsed.orderBy) {
+      if (!outCols.includes(column)) {
+        throw new Error(`ORDER BY column "${column}" must be in the SELECT list`);
+      }
+    }
+    outRows = sortRowsBy(outRows, parsed.orderBy);
+  }
+
+  if (parsed.limit != null) {
+    outRows = outRows.slice(0, parsed.limit);
+  }
+
   return { columns: outCols, rows: outRows };
 }
 
@@ -552,7 +735,7 @@ function DataTable({ title, columns, rows, variant = "source", maxHeight = "max-
   );
 }
 
-function SqlEditor({ value, onChange, onSubmit, status, errorMessage }) {
+function SqlEditor({ value, onChange, onSubmit, status, errorMessage, submitDisabled }) {
   const textareaRef = useRef(null);
   const lineCount = Math.max(value.split("\n").length, 4);
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join("\n");
@@ -560,7 +743,7 @@ function SqlEditor({ value, onChange, onSubmit, status, errorMessage }) {
   const handleKeyDown = (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      onSubmit();
+      if (!submitDisabled) onSubmit();
     }
   };
 
@@ -582,7 +765,8 @@ function SqlEditor({ value, onChange, onSubmit, status, errorMessage }) {
         </div>
         <button
           onClick={onSubmit}
-          className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors"
+          disabled={submitDisabled}
+          className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors disabled:bg-stone-700 disabled:text-stone-500 disabled:cursor-not-allowed"
         >
           <Play size={12} /> Submit
           <span className="opacity-70 ml-1">⌘↵</span>
@@ -681,6 +865,561 @@ function ResultComparison({ actual, expected, errorMessage }) {
 }
 
 // ============================================================
+// ANIMATION STAGE
+// Plays the WHERE → SELECT → ORDER BY → LIMIT transformation
+// on a copy of the source table after a correct submission.
+// ============================================================
+
+const PHASE_LABEL = {
+  filtering: "WHERE — filtering rows",
+  selecting: "SELECT — choosing columns",
+  sorting:   "ORDER BY — sorting",
+  limiting:  "LIMIT — taking top N",
+  complete:  "transformation complete",
+};
+
+function computeFirstPhase(parsed, allColumns) {
+  if (parsed.where) return "filtering";
+  if (!(parsed.columns.length === 1 && parsed.columns[0] === "*") &&
+      parsed.columns.length < allColumns.length) return "selecting";
+  if (parsed.orderBy && parsed.orderBy.length) return "sorting";
+  if (parsed.limit != null) return "limiting";
+  return null;
+}
+
+function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
+  // Local visual state. rowOrder holds source-row indices in current visual order.
+  const initialOrder = useMemo(() => sourceRows.map((_, i) => i), [sourceRows]);
+  const [rowOrder, setRowOrder]         = useState(initialOrder);
+  const [hiddenRows, setHiddenRows]     = useState(() => new Set());
+  const [collapsedCols, setCollapsedCols] = useState(() => new Set());
+  const [rowOffsets, setRowOffsets]     = useState({});  // sourceIdx -> px
+  const [lifted, setLifted]             = useState(false);
+  const [phase, setPhase]               = useState("init");
+
+  // Drive the phase sequence once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    const announce = (p) => {
+      setPhase(p);
+      onPhaseChange(p);
+    };
+
+    (async () => {
+      let currentOrder = initialOrder.slice();
+      const ROW_HEIGHT = 30; // px — matches tr height set below
+
+      // 1) FILTER
+      if (parsed.where) {
+        announce("filtering");
+        const drop = new Set();
+        sourceRows.forEach((r, i) => {
+          if (!evalExpr(parsed.where, r)) drop.add(i);
+        });
+        setHiddenRows(drop);
+        const maxStagger = Math.max(0, drop.size - 1) * 50;
+        await wait(400 + maxStagger + 300);
+        if (cancelled) return;
+        currentOrder = currentOrder.filter((i) => !drop.has(i));
+        setRowOrder(currentOrder);
+        await wait(80);
+        if (cancelled) return;
+      }
+
+      // 2) SELECT
+      const selectingAll =
+        parsed.columns.length === 1 && parsed.columns[0] === "*";
+      if (!selectingAll && parsed.columns.length < sourceColumns.length) {
+        announce("selecting");
+        const collapse = new Set(
+          sourceColumns.filter((c) => !parsed.columns.includes(c))
+        );
+        setCollapsedCols(collapse);
+        await wait(400 + 200);
+        if (cancelled) return;
+      }
+
+      // 3) ORDER BY
+      if (parsed.orderBy && parsed.orderBy.length) {
+        announce("sorting");
+        const sortedOrder = [...currentOrder].sort((a, b) => {
+          for (const { column, direction } of parsed.orderBy) {
+            const av = sourceRows[a][column];
+            const bv = sourceRows[b][column];
+            if (av == null && bv == null) continue;
+            if (av == null) return 1;
+            if (bv == null) return -1;
+            if (av < bv) return direction === "desc" ? 1 : -1;
+            if (av > bv) return direction === "desc" ? -1 : 1;
+          }
+          return 0;
+        });
+
+        const oldPos = {};
+        currentOrder.forEach((idx, vi) => { oldPos[idx] = vi; });
+        const newPos = {};
+        sortedOrder.forEach((idx, vi) => { newPos[idx] = vi; });
+
+        // Lift step: short transition (~200ms) — handled by `rowTransitionFor`.
+        setLifted(true);
+        await wait(220);
+        if (cancelled) return;
+
+        // Translate step: 600ms ease-in-out.
+        const offsets = {};
+        currentOrder.forEach((idx) => {
+          offsets[idx] = (newPos[idx] - oldPos[idx]) * ROW_HEIGHT;
+        });
+        setRowOffsets(offsets);
+        await wait(620);
+        if (cancelled) return;
+
+        // Settle: swap the array, drop offsets/lift instantly (no transition).
+        setPhase("settling");          // disables transitions for the snap
+        setRowOrder(sortedOrder);
+        setRowOffsets({});
+        setLifted(false);
+        currentOrder = sortedOrder;
+        await wait(60);
+        if (cancelled) return;
+      }
+
+      // 4) LIMIT
+      if (parsed.limit != null && parsed.limit < currentOrder.length) {
+        announce("limiting");
+        const toDrop = currentOrder.slice(parsed.limit);
+        setHiddenRows((prev) => {
+          const next = new Set(prev);
+          toDrop.forEach((i) => next.add(i));
+          return next;
+        });
+        const maxStagger = Math.max(0, toDrop.length - 1) * 50;
+        await wait(400 + maxStagger + 200);
+        if (cancelled) return;
+        currentOrder = currentOrder.slice(0, parsed.limit);
+        setRowOrder(currentOrder);
+        await wait(80);
+        if (cancelled) return;
+      }
+
+      announce("complete");
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Render: a clone of the source, animated according to the per-row/col state.
+  const visibleColumns = sourceColumns;
+
+  // Row transition strategy varies by phase.
+  // During 'sorting', the lift uses a fast transform transition; once offsets are
+  // applied, the 600ms ease-in-out animates the slide. 'settling' disables
+  // transitions so the rowOrder/transform reset happens instantly.
+  const rowTransitionFor = (visualIdx) => {
+    if (phase === "filtering" || phase === "limiting") {
+      const delay = visualIdx * 50;
+      return `opacity 400ms ease-out ${delay}ms, transform 400ms ease-out ${delay}ms`;
+    }
+    if (phase === "sorting") {
+      // Lift sub-step has no offsets yet → small transition is fine. Once
+      // offsets are applied, the slide takes 600ms. The 200ms baseline on
+      // box-shadow handles the lift's shadow.
+      const sliding = Object.keys(rowOffsets).length > 0;
+      return sliding
+        ? "transform 600ms ease-in-out, box-shadow 200ms ease-out"
+        : "transform 200ms ease-out, box-shadow 200ms ease-out";
+    }
+    if (phase === "settling") return "none";
+    return "opacity 200ms ease-out, transform 200ms ease-out";
+  };
+
+  const cellTransition =
+    "max-width 400ms ease-out, padding 400ms ease-out, opacity 300ms ease-out";
+
+  return (
+    <section className="rounded-lg border border-amber-500/40 bg-stone-900/50 overflow-hidden">
+      <header className="px-3 py-2 flex items-center justify-between border-b border-amber-500/30 bg-amber-500/5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-widest text-amber-300">
+            Animation
+          </span>
+          <span className="text-sm text-stone-200 font-medium">
+            {PHASE_LABEL[phase] || "preparing…"}
+          </span>
+        </div>
+      </header>
+      <div className="overflow-auto max-h-96">
+        <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed" }}>
+          <thead className="sticky top-0">
+            <tr className="bg-stone-950">
+              {visibleColumns.map((c) => {
+                const num = isNumericColumn(sourceRows, c);
+                const collapsed = collapsedCols.has(c);
+                return (
+                  <th
+                    key={c}
+                    className={`font-mono font-semibold text-stone-400 border-b border-stone-800 whitespace-nowrap ${num ? "text-right" : "text-left"}`}
+                    style={{
+                      padding: collapsed ? "0px" : "0.5rem 0.75rem",
+                      maxWidth: collapsed ? "0px" : "240px",
+                      width: collapsed ? "0px" : "auto",
+                      opacity: collapsed ? 0 : 1,
+                      overflow: "hidden",
+                      transition: cellTransition,
+                    }}
+                  >
+                    {c}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rowOrder.map((srcIdx, visualIdx) => {
+              const row = sourceRows[srcIdx];
+              const isHidden = hiddenRows.has(srcIdx);
+              const sortPx = rowOffsets[srcIdx] || 0;
+              const liftPx = lifted && !isHidden ? -3 : 0;
+              const hidePx = isHidden ? 20 : 0;
+              const translate = sortPx + liftPx + hidePx;
+              return (
+                <tr
+                  key={srcIdx}
+                  className={visualIdx % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}
+                  style={{
+                    height: "30px",
+                    opacity: isHidden ? 0 : 1,
+                    transform: `translateY(${translate}px)`,
+                    boxShadow:
+                      lifted && !isHidden
+                        ? "0 4px 12px rgba(0,0,0,0.45)"
+                        : "0 0 0 rgba(0,0,0,0)",
+                    transition: rowTransitionFor(visualIdx),
+                  }}
+                >
+                  {visibleColumns.map((c) => {
+                    const num = isNumericColumn(sourceRows, c);
+                    const collapsed = collapsedCols.has(c);
+                    const display = formatCell(row[c]);
+                    return (
+                      <td
+                        key={c}
+                        className={`border-b border-stone-800/50 align-middle ${num ? "text-right tabular-nums" : "text-left"}`}
+                        style={{
+                          padding: collapsed ? "0px" : "0.25rem 0.75rem",
+                          maxWidth: collapsed ? "0px" : "240px",
+                          width: collapsed ? "0px" : "auto",
+                          opacity: collapsed ? 0 : 1,
+                          overflow: "hidden",
+                          transition: cellTransition,
+                          whiteSpace: "nowrap",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {display === null ? (
+                          <span
+                            className="inline-block w-10 h-3 rounded-sm border border-dashed border-stone-700 bg-stone-950/70 align-middle"
+                            title="NULL"
+                          />
+                        ) : (
+                          <span className="text-stone-200">{display}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// ============================================================
+// OPERATION BUILDER — palette, pipeline, reference bar
+// ============================================================
+
+function PaletteBlock({ opId, locked }) {
+  const op = OPERATIONS[opId];
+  const onDragStart = (e) => {
+    if (locked) { e.preventDefault(); return; }
+    e.dataTransfer.setData("application/op-id", opId);
+    e.dataTransfer.setData("application/op-source", "palette");
+    e.dataTransfer.effectAllowed = "copy";
+  };
+  if (locked) {
+    return (
+      <div
+        title={`Unlocked in Layer ${op.layer}`}
+        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border border-stone-800 bg-stone-950/60 text-stone-600 text-xs cursor-not-allowed select-none"
+      >
+        <span className="opacity-40">{op.icon}</span>
+        <span>{op.label}</span>
+        <Lock size={11} className="text-stone-700 ml-0.5" />
+      </div>
+    );
+  }
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 text-xs cursor-grab active:cursor-grabbing hover:bg-cyan-500/20 hover:border-cyan-400/60 transition-colors select-none"
+    >
+      <span>{op.icon}</span>
+      <span className="font-medium">{op.label}</span>
+    </div>
+  );
+}
+
+function OperationsPalette() {
+  return (
+    <section className="rounded-lg border border-stone-800 bg-stone-900/50 p-3">
+      <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-2">
+        Available Operations · drag into the pipeline
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {OPERATIONS_LIST.map((opId) => (
+          <PaletteBlock key={opId} opId={opId} locked={OPERATIONS[opId].layer > UNLOCKED_THROUGH_LAYER} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PipelineSlot({ index, opId, slotStatus, onRemove, onDropOp, isLast, dropHover, onDragOverSlot, onDragLeaveSlot }) {
+  const empty = !opId;
+  const op = opId ? OPERATIONS[opId] : null;
+
+  const onDragStartFromSlot = (e) => {
+    if (empty) return;
+    e.dataTransfer.setData("application/op-id", opId);
+    e.dataTransfer.setData("application/op-source", "pipeline");
+    e.dataTransfer.setData("application/op-from-idx", String(index));
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const allowDrop = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    onDragOverSlot(index);
+  };
+
+  // status → border colors
+  let borderClass = "border-dashed border-stone-700";
+  if (!empty) {
+    if (slotStatus === "error")   borderClass = "border-rose-500/70";
+    else if (slotStatus === "warning") borderClass = "border-amber-500/60";
+    else                          borderClass = "border-emerald-500/60";
+  }
+  if (dropHover) borderClass = "border-cyan-400/80";
+
+  return (
+    <div className="relative">
+      <div
+        onDragOver={allowDrop}
+        onDragLeave={() => onDragLeaveSlot(index)}
+        onDrop={(e) => { e.preventDefault(); onDropOp(e, index); onDragLeaveSlot(index); }}
+        className={`group relative rounded-lg border-2 ${borderClass} transition-colors ${
+          empty ? "bg-stone-950/40" : "bg-stone-900/70"
+        }`}
+      >
+        {empty ? (
+          <div className="px-4 py-3 text-xs text-stone-600 italic flex items-center gap-2">
+            <Plus size={12} />
+            Drop an operation here
+          </div>
+        ) : (
+          <div
+            draggable
+            onDragStart={onDragStartFromSlot}
+            className="px-4 py-3 flex items-center gap-3 cursor-grab active:cursor-grabbing"
+          >
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-800 text-stone-400 text-[10px] font-mono">
+              {index + 1}
+            </span>
+            <span className="text-lg leading-none">{op.icon}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-stone-100">{op.label}</div>
+              <div className="text-[11px] text-stone-500 font-mono">{op.hint}</div>
+            </div>
+            <button
+              onClick={onRemove}
+              className="text-stone-500 hover:text-rose-300 transition-colors p-1"
+              aria-label="Remove operation"
+              title="Remove"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Inline status message under filled slot */}
+      {!empty && slotStatus && slotStatus !== "ok" && (
+        <div
+          className={`mt-1 ml-2 text-[11px] flex items-center gap-1.5 ${
+            slotStatus === "error" ? "text-rose-300" : "text-amber-300"
+          }`}
+        >
+          <AlertTriangle size={11} />
+          <span>{slotStatus === "error" ? "Duplicate block" : "warning"}</span>
+        </div>
+      )}
+
+      {/* Connector to next block */}
+      {!isLast && (
+        <div className="flex justify-center py-1">
+          <div className={`w-px h-3 ${!empty && slotStatus === "ok" ? "bg-emerald-500/60" : "bg-stone-700"}`} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PipelineBuilder({ pipeline, onChange, validation, expectedPipeline, onConfirm, canConfirm }) {
+  const [dropHoverIdx, setDropHoverIdx] = useState(null);
+
+  const handleDrop = (e, idx) => {
+    const opId = e.dataTransfer.getData("application/op-id");
+    const source = e.dataTransfer.getData("application/op-source");
+    const fromIdxStr = e.dataTransfer.getData("application/op-from-idx");
+    if (!opId) return;
+
+    if (source === "pipeline") {
+      const from = parseInt(fromIdxStr, 10);
+      if (Number.isNaN(from) || from === idx) return;
+      const next = [...pipeline];
+      const [moved] = next.splice(from, 1);
+      const insertAt = from < idx ? idx - 1 : idx;
+      next.splice(Math.min(insertAt, next.length), 0, moved);
+      onChange(next);
+    } else {
+      const next = [...pipeline];
+      next.splice(Math.min(idx, next.length), 0, opId);
+      onChange(next);
+    }
+  };
+
+  const handleRemove = (idx) => {
+    const next = [...pipeline];
+    next.splice(idx, 1);
+    onChange(next);
+  };
+
+  const addSlot = () => onChange([...pipeline, null]);
+
+  // Render: one slot per pipeline entry, plus one trailing empty slot (so users can always drop at the end).
+  const renderedSlots = [...pipeline];
+  const trailingEmpty = pipeline.length === 0 || pipeline[pipeline.length - 1] != null;
+  if (trailingEmpty) renderedSlots.push(null);
+
+  const matched = pipelineMatchesExpected(pipeline.filter(Boolean), expectedPipeline);
+
+  return (
+    <section className="rounded-lg border border-stone-800 bg-stone-900/50 p-4">
+      <header className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Wrench size={14} className="text-amber-400" />
+          <span className="text-[10px] uppercase tracking-widest text-stone-400">Operation Pipeline</span>
+          <span className="text-[11px] text-stone-500 italic">top → bottom = execution order</span>
+        </div>
+        <span className="text-[11px] text-stone-500">
+          {pipeline.filter(Boolean).length} step{pipeline.filter(Boolean).length === 1 ? "" : "s"}
+        </span>
+      </header>
+
+      <div className="space-y-0">
+        {renderedSlots.map((opId, idx) => {
+          const slotStatus = opId ? validation.slots[idx]?.status : null;
+          return (
+            <PipelineSlot
+              key={idx}
+              index={idx}
+              opId={opId}
+              slotStatus={slotStatus}
+              onRemove={() => handleRemove(idx)}
+              onDropOp={handleDrop}
+              isLast={idx === renderedSlots.length - 1}
+              dropHover={dropHoverIdx === idx}
+              onDragOverSlot={setDropHoverIdx}
+              onDragLeaveSlot={(i) => setDropHoverIdx((curr) => (curr === i ? null : curr))}
+            />
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <button
+          onClick={addSlot}
+          className="text-[11px] text-stone-400 hover:text-stone-200 inline-flex items-center gap-1"
+        >
+          <Plus size={12} /> Add slot
+        </button>
+
+        <div className="flex items-center gap-3">
+          {/* Inline warning summary */}
+          {validation.slots.some((s) => s.status === "warning") && (
+            <span className="text-[11px] text-amber-300 italic max-w-md text-right">
+              {validation.slots.find((s) => s.status === "warning")?.message}
+            </span>
+          )}
+          {validation.hasErrors && (
+            <span className="text-[11px] text-rose-300 italic">
+              Fix the duplicate blocks before continuing.
+            </span>
+          )}
+          <button
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors disabled:bg-stone-700 disabled:text-stone-500 disabled:cursor-not-allowed"
+            title={
+              !matched
+                ? "Build the pipeline that matches the target"
+                : validation.hasErrors
+                ? "Resolve errors first"
+                : "Lock in your pipeline and write the SQL"
+            }
+          >
+            Now write the SQL <ChevronRight size={12} />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PipelineReference({ pipeline, onEdit }) {
+  return (
+    <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 flex items-center gap-3">
+      <Wrench size={12} className="text-amber-400" />
+      <span className="text-[10px] uppercase tracking-widest text-amber-300">Pipeline</span>
+      <div className="flex items-center gap-1 flex-wrap">
+        {pipeline.map((opId, idx) => (
+          <span key={idx} className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-900/70 border border-stone-700 text-[11px] text-stone-200">
+              <span>{OPERATIONS[opId].icon}</span>
+              <span className="font-medium">{OPERATIONS[opId].label}</span>
+            </span>
+            {idx < pipeline.length - 1 && <ChevronRight size={11} className="text-stone-500" />}
+          </span>
+        ))}
+      </div>
+      <button
+        onClick={onEdit}
+        className="ml-auto text-[11px] text-amber-300 hover:text-amber-200 underline-offset-2 hover:underline"
+      >
+        Edit pipeline
+      </button>
+    </section>
+  );
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 
@@ -704,9 +1443,32 @@ export default function SqlForge() {
   const [errorByCurrent, setErrorByCurrent] = useState(null);
   const [completed, setCompleted] = useState([]);
 
+  // Operation Builder state (per challenge)
+  const [pipelines, setPipelines] = useState(() => Object.fromEntries(CHALLENGES.map((c) => [c.id, []])));
+  const [pipelineConfirmed, setPipelineConfirmed] = useState({}); // id -> boolean
+  const editorAnchorRef = useRef(null);
+
+  // Animation orchestration: phase is reported up by AnimationStage as it runs.
+  // 'idle' before/after any animation; sub-phases while running; 'complete' at the end.
+  const [animationPhase, setAnimationPhase] = useState("idle");
+  const [animationParsed, setAnimationParsed] = useState(null);
+  const [skipAnimations, setSkipAnimations] = useState(false);
+
+  const animating =
+    animationPhase !== "idle" && animationPhase !== "complete";
+
   const challenge = CHALLENGES[currentIdx];
   const status = statusById[challenge.id] || "idle";
   const query = queries[challenge.id] || "";
+
+  const isOpBuilder = challenge.type === "operation_builder";
+  const pipeline = pipelines[challenge.id] || [];
+  const pipelineFilled = pipeline.filter(Boolean);
+  const pipelineValidation = useMemo(() => validatePipeline(pipelineFilled), [pipelineFilled]);
+  const pipelineMatches = pipelineMatchesExpected(pipelineFilled, challenge.expectedPipeline);
+  const canConfirmPipeline = isOpBuilder && pipelineMatches && !pipelineValidation.hasErrors;
+  const isPipelineConfirmed = !!pipelineConfirmed[challenge.id];
+  const editorLocked = isOpBuilder && !isPipelineConfirmed;
 
   const expectedResult = useMemo(() => {
     try {
@@ -721,28 +1483,51 @@ export default function SqlForge() {
   const sourceRows = SHOWS_DATA;
 
   const handleSubmit = () => {
+    if (animating) return;
+    if (editorLocked) return;
     if (!query.trim()) {
       setStatusById((s) => ({ ...s, [challenge.id]: "wrong" }));
       setActualByCurrent(null);
       setErrorByCurrent("Editor is empty — write a query first.");
+      setAnimationPhase("idle");
+      setAnimationParsed(null);
       return;
     }
     try {
+      const parsed = parseQuery(query);
       const actual = executeQuery(query, TABLES);
       if (compareResults(actual, expectedResult)) {
         setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
         setActualByCurrent(actual);
         setErrorByCurrent(null);
         setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
+
+        if (skipAnimations) {
+          setAnimationParsed(null);
+          setAnimationPhase("idle");
+        } else {
+          const first = computeFirstPhase(parsed, sourceColumns);
+          if (first) {
+            setAnimationParsed(parsed);
+            setAnimationPhase(first); // AnimationStage takes over from here
+          } else {
+            setAnimationParsed(null);
+            setAnimationPhase("idle");
+          }
+        }
       } else {
         setStatusById((s) => ({ ...s, [challenge.id]: "wrong" }));
         setActualByCurrent(actual);
         setErrorByCurrent(null);
+        setAnimationPhase("idle");
+        setAnimationParsed(null);
       }
     } catch (e) {
       setStatusById((s) => ({ ...s, [challenge.id]: "wrong" }));
       setActualByCurrent(null);
       setErrorByCurrent(e.message || String(e));
+      setAnimationPhase("idle");
+      setAnimationParsed(null);
     }
   };
 
@@ -751,11 +1536,37 @@ export default function SqlForge() {
     setCurrentIdx(idx);
     setActualByCurrent(null);
     setErrorByCurrent(null);
+    setAnimationPhase("idle");
+    setAnimationParsed(null);
   };
 
   const handleNext = () => goToChallenge(currentIdx + 1);
 
   const hasNext = currentIdx < CHALLENGES.length - 1;
+
+  const setPipelineForCurrent = (next) => {
+    setPipelines((p) => ({ ...p, [challenge.id]: next }));
+    // If the pipeline was confirmed and the user edits it, unconfirm so they re-lock-in.
+    if (pipelineConfirmed[challenge.id]) {
+      setPipelineConfirmed((c) => ({ ...c, [challenge.id]: false }));
+    }
+  };
+
+  const confirmPipeline = () => {
+    setPipelineConfirmed((c) => ({ ...c, [challenge.id]: true }));
+    // Defer scroll so the editor mounts/unlocks first.
+    setTimeout(() => {
+      editorAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  };
+
+  const editPipeline = () => {
+    setPipelineConfirmed((c) => ({ ...c, [challenge.id]: false }));
+  };
+
+  const badge = isOpBuilder
+    ? { icon: "🔧", label: "Build the Pipeline" }
+    : { icon: "⚒️", label: "Forge the Query" };
 
   return (
     <div
@@ -803,7 +1614,7 @@ export default function SqlForge() {
               <p className="text-sm text-stone-400 mt-1 max-w-2xl">{challenge.description}</p>
             </div>
             <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 text-xs text-amber-200 shrink-0">
-              ⚒️ Forge the Query
+              {badge.icon} {badge.label}
             </div>
           </div>
 
@@ -813,19 +1624,73 @@ export default function SqlForge() {
             <DataTable title="expected result" columns={expectedResult.columns} rows={expectedResult.rows} variant="target" />
           </div>
 
+          {/* Operation Builder — only for operation_builder challenges */}
+          {isOpBuilder && !isPipelineConfirmed && (
+            <div className="mb-4 space-y-3">
+              <OperationsPalette />
+              <PipelineBuilder
+                pipeline={pipeline}
+                onChange={setPipelineForCurrent}
+                validation={pipelineValidation}
+                expectedPipeline={challenge.expectedPipeline}
+                onConfirm={confirmPipeline}
+                canConfirm={canConfirmPipeline}
+              />
+            </div>
+          )}
+
+          {/* Compact pipeline reference once confirmed */}
+          {isOpBuilder && isPipelineConfirmed && (
+            <div className="mb-3">
+              <PipelineReference pipeline={pipelineFilled} onEdit={editPipeline} />
+            </div>
+          )}
+
           {/* Editor */}
-          <div className="mb-4">
-            <SqlEditor
-              value={query}
-              onChange={(v) => setQueries((q) => ({ ...q, [challenge.id]: v }))}
-              onSubmit={handleSubmit}
-              status={status}
-              errorMessage={errorByCurrent}
-            />
+          <div className="mb-4" ref={editorAnchorRef}>
+            {editorLocked ? (
+              <div className="rounded-lg border border-dashed border-stone-800 bg-stone-950/40 p-6 text-center text-xs text-stone-500 italic">
+                Build the pipeline above first, then the SQL editor unlocks.
+              </div>
+            ) : (
+              <SqlEditor
+                value={query}
+                onChange={(v) => setQueries((q) => ({ ...q, [challenge.id]: v }))}
+                onSubmit={handleSubmit}
+                status={status}
+                errorMessage={errorByCurrent}
+                submitDisabled={animating}
+              />
+            )}
           </div>
 
+          {/* Skip-animations toggle */}
+          <div className="mb-3 flex justify-end">
+            <label className="inline-flex items-center gap-2 text-[11px] text-stone-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={skipAnimations}
+                onChange={(e) => setSkipAnimations(e.target.checked)}
+                className="accent-amber-500"
+              />
+              Skip animations
+            </label>
+          </div>
+
+          {/* Animation stage — visible only when we kicked one off for this submission */}
+          {status === "correct" && animationParsed && animationPhase !== "idle" && (
+            <div className="mb-4">
+              <AnimationStage
+                parsed={animationParsed}
+                sourceColumns={sourceColumns}
+                sourceRows={sourceRows}
+                onPhaseChange={setAnimationPhase}
+              />
+            </div>
+          )}
+
           {/* Feedback */}
-          {status === "correct" && (
+          {status === "correct" && !animating && (
             <WhyPanel why={challenge.why} onNext={handleNext} hasNext={hasNext} />
           )}
           {status === "wrong" && (
