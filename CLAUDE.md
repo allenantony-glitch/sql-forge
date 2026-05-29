@@ -44,7 +44,7 @@ Full design doc: @docs/design.md
 
 ## Build Phases
 We are building this app incrementally. Each phase adds one feature layer.
-Current phase: Phase 3 — Operation Builder
+Current phase: Phase 6: Gem system + Syntax Shelf
 - Phase 1: Core shell + Layer 1 TRANSFORM challenges ✓
 - Phase 2: Animation system
 - Phase 3: Operation Builder

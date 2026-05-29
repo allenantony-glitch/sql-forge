@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Lock, Check, ChevronRight, Play, Pickaxe, Gem, X, Plus, AlertTriangle, Wrench } from "lucide-react";
+import { Lock, Check, ChevronRight, ChevronUp, ChevronDown, Play, Pickaxe, Gem, X, Plus, AlertTriangle, Wrench, Sparkles, Eraser, Lightbulb, Stethoscope } from "lucide-react";
 
 // ============================================================
 // SEED DATA — the streaming-platform "shows" table (15 rows)
@@ -39,6 +39,7 @@ const CHALLENGES = [
     title: "The Full Vein",
     description: "Reveal every row and every column of the shows table.",
     targetSql: "SELECT * FROM shows",
+    concepts: ["select"],
     why: "SELECT * means \"everything.\" FROM tells the database which table. This is the simplest possible query.",
   },
   {
@@ -48,6 +49,7 @@ const CHALLENGES = [
     title: "Narrow the Vein",
     description: "Show every row, but only the name and imdb_rating columns.",
     targetSql: "SELECT name, imdb_rating FROM shows",
+    concepts: ["select"],
     why: "In production, you never use SELECT *. You name the columns you need. Faster and clearer.",
   },
   {
@@ -57,6 +59,7 @@ const CHALLENGES = [
     title: "The Filter",
     description: "Reveal only shows with an imdb_rating above 8.5.",
     targetSql: "SELECT * FROM shows WHERE imdb_rating > 8.5",
+    concepts: ["filter"],
     why: "WHERE filters rows before the result is assembled. The database checks each row against the condition.",
   },
   {
@@ -66,6 +69,7 @@ const CHALLENGES = [
     title: "Double Filter",
     description: "Find shows certified 'A' that premiered in 2015 or later.",
     targetSql: "SELECT * FROM shows WHERE certificate = 'A' AND premiere_year >= 2015",
+    concepts: ["filter"],
     why: "AND means both conditions must be true. Each row must pass BOTH checks to survive.",
   },
   {
@@ -75,6 +79,7 @@ const CHALLENGES = [
     title: "The Ranking",
     description: "Reveal the five highest-rated shows. Only their name and rating.",
     targetSql: "SELECT name, imdb_rating FROM shows ORDER BY imdb_rating DESC LIMIT 5",
+    concepts: ["select", "sort"],
     why: "ORDER BY sorts results — DESC means highest first. LIMIT caps how many rows you get back. Together they give you 'top N' queries.",
   },
   {
@@ -85,6 +90,7 @@ const CHALLENGES = [
     description: "Build the transformation pipeline, then write the SQL. Show the top 3 shows by rating — only name and imdb_rating.",
     expectedPipeline: ["select", "sort", "limit"],
     targetSql: "SELECT name, imdb_rating FROM shows ORDER BY imdb_rating DESC LIMIT 3",
+    concepts: ["select", "sort", "compass"],
     why: "You built the plan first, then wrote the code. In real SQL work, planning the operations before writing syntax prevents mistakes.",
   },
   {
@@ -95,7 +101,101 @@ const CHALLENGES = [
     description: "Build the pipeline, then write the SQL. Find shows rated above 7.0, show only their name, sorted alphabetically.",
     expectedPipeline: ["filter", "select", "sort"],
     targetSql: "SELECT name FROM shows WHERE imdb_rating > 7.0 ORDER BY name ASC",
+    concepts: ["filter", "select", "sort", "compass"],
     why: "The execution order matters: filter first (WHERE), then pick columns (SELECT), then sort (ORDER BY). You just built that order with your hands.",
+  },
+  {
+    id: "1.8",
+    layer: 1,
+    type: "predict",
+    title: "Read the Spell",
+    description: "Read this query and build the result by hand. Click columns, then click rows, then check.",
+    displaySql: "SELECT name, certificate FROM shows WHERE imdb_rating > 8.0 ORDER BY name ASC",
+    targetSql: "SELECT name, certificate FROM shows WHERE imdb_rating > 8.0 ORDER BY name ASC",
+    concepts: ["filter", "select", "sort", "lens"],
+    why: "You just ran SQL in your head — you figured out which rows pass the filter, which columns to keep, and what order they go in. That's the mental model.",
+  },
+  {
+    id: "1.9",
+    layer: 1,
+    type: "predict",
+    title: "The Void",
+    description: "Read this query and build the result. Pay attention to the hollow cells.",
+    displaySql: "SELECT name, finale_year FROM shows WHERE finale_year IS NULL",
+    targetSql: "SELECT name, finale_year FROM shows WHERE finale_year IS NULL",
+    concepts: ["filter", "select", "lens"],
+    why: "NULL means absence — those hollow cells are shows still running. IS NULL finds them. You identified them visually and now you know what NULL looks like in data.",
+  },
+  {
+    id: "1.10",
+    layer: 1,
+    type: "wrong_tool",
+    title: "The Void Trap",
+    description: "Find shows that are still running — they have no finale year.",
+    targetSql: "SELECT name, finale_year FROM shows WHERE finale_year IS NULL",
+    concepts: ["filter"],
+    hints: [
+      {
+        // Matches `= null` (or `= NULL`, with any whitespace) when no `IS NULL` precedes it.
+        trigger: (q) => {
+          const lower = q.toLowerCase();
+          return /=\s*null\b/.test(lower) && !/is\s+null/.test(lower);
+        },
+        message:
+          "Your query returned nothing because NULL isn't a value — it's the absence of one. You can't use = to compare with absence. Try IS NULL instead.",
+      },
+    ],
+    why: "NULL isn't a value — it's absence. You learned this by hitting the wall: = NULL returns nothing, IS NULL finds the gaps. You won't make this mistake again.",
+  },
+  {
+    id: "1.11",
+    layer: 1,
+    type: "transform",
+    title: "Tie-Breaker",
+    description: "Find the single highest-rated show. If two shows share the top rating, pick the one whose name comes first alphabetically.",
+    targetSql: "SELECT name, imdb_rating FROM shows ORDER BY imdb_rating DESC, name ASC LIMIT 1",
+    concepts: ["select", "sort"],
+    why: "Multi-column ORDER BY handles ties: sort by rating first, then alphabetically within ties. This is exactly how HackerRank tie-breaking works.",
+  },
+  {
+    id: "1.12",
+    layer: 1,
+    type: "transform",
+    title: "Unique Crystals",
+    description: "List every unique certificate value in the shows table. No duplicates.",
+    targetSql: "SELECT DISTINCT certificate FROM shows ORDER BY certificate ASC",
+    concepts: ["select", "sort"],
+    why: "DISTINCT removes duplicate rows. Combined with ORDER BY you get a clean, sorted list of unique values.",
+  },
+  {
+    id: "1.13",
+    layer: 1,
+    type: "diagnose",
+    title: "Broken Spell",
+    description: "This query has a bug. Read it, look at the wrong result, then diagnose the problem.",
+    brokenSql: "SELECT name, imdb_rating AS rating FROM shows WHERE rating > 8.0",
+    targetSql: "SELECT name, imdb_rating AS rating FROM shows WHERE imdb_rating > 8.0",
+    concepts: ["anvil"],
+    options: [
+      { id: "a", text: "The alias 'rating' doesn't exist when WHERE runs — WHERE executes before SELECT, so the alias hasn't been created yet." },
+      { id: "b", text: "AS can only be used with aggregate functions, not regular columns." },
+      { id: "c", text: "The > operator doesn't work with aliased columns." },
+      { id: "d", text: "You need to put quotes around 'rating' in the WHERE clause." },
+    ],
+    correctOption: "a",
+    explanation: "SQL execution order matters: FROM → WHERE → SELECT. When WHERE runs, the alias 'rating' from SELECT doesn't exist yet. Use the original column name 'imdb_rating' in WHERE. This is a fundamental rule you'll never forget because you just saw it fail.",
+    why: "You diagnosed an execution order bug. WHERE runs before SELECT, so aliases don't exist in WHERE. This understanding prevents countless real-world errors.",
+  },
+  {
+    id: "1.14",
+    layer: 1,
+    type: "operation_builder",
+    title: "The Forge",
+    description: "Final challenge: build the pipeline AND write the SQL. Find the top 5 still-running shows (no finale year) that premiered after 2010, sorted by rating descending then name ascending. Only name and imdb_rating columns.",
+    expectedPipeline: ["filter", "select", "sort", "limit"],
+    targetSql: "SELECT name, imdb_rating FROM shows WHERE finale_year IS NULL AND premiere_year > 2010 ORDER BY imdb_rating DESC, name ASC LIMIT 5",
+    concepts: ["filter", "select", "sort", "compass"],
+    why: "You combined every Layer 1 concept into one query: WHERE with IS NULL and AND, SELECT specific columns, multi-column ORDER BY, and LIMIT. The Surface is forged.",
   },
 ];
 
@@ -174,6 +274,62 @@ const LAYERS = [
 ];
 
 // ============================================================
+// GEMS — concept-tracking jewels in the gem belt
+// Brightness rises with depth of understanding (see brightness rules below).
+// ============================================================
+
+const GEMS = [
+  { id: "filter",     name: "Filter",     color: "#ef4444", shape: "triangle",  concept: "WHERE" },
+  { id: "sort",       name: "Sort",       color: "#3b82f6", shape: "diamond",   concept: "ORDER BY" },
+  { id: "select",     name: "Select",     color: "#22c55e", shape: "rectangle", concept: "SELECT columns" },
+  { id: "compass",    name: "Compass",    color: "#f59e0b", shape: "circle",    concept: "Execution order" },
+  { id: "lens",       name: "Lens",       color: "#a855f7", shape: "circle",    concept: "Query reading" },
+  { id: "anvil",      name: "Anvil",      color: "#6b7280", shape: "hexagon",   concept: "Debugging" },
+  // Future-layer gems — shown as locked shadows so the learner sees what's ahead.
+  { id: "group",      name: "Group",      color: "#8b5cf6", shape: "hexagon",   concept: "GROUP BY",        layer: 2 },
+  { id: "guard",      name: "Guard",      color: "#f97316", shape: "shield",    concept: "HAVING",          layer: 2 },
+  { id: "count",      name: "Count",      color: "#e2e8f0", shape: "circle",    concept: "Aggregates",      layer: 2 },
+  { id: "teacher",    name: "Teacher",    color: "#fafafa", shape: "circle",    concept: "Explaining",      layer: 2 },
+  { id: "bridge",     name: "Bridge",     color: "#06b6d4", shape: "bridge",    concept: "JOIN",            layer: 3 },
+  { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding",  layer: 3 },
+];
+
+const GEM_BY_ID = Object.fromEntries(GEMS.map((g) => [g.id, g]));
+
+// Visual + verbal mapping for brightness levels 0–4.
+const GEM_LEVEL_LABEL   = ["unlit", "dim", "warm", "bright", "blazing"];
+const GEM_LEVEL_OPACITY = [0.15, 0.30, 0.60, 0.85, 1.00];
+
+// Syntax templates shown in the shelf. Each template is anchored to a gem;
+// as that gem brightens, the template shrinks (full → keyword-only → hidden).
+const SYNTAX_TEMPLATES = [
+  { id: "filter_basic", gemId: "filter", keyword: "WHERE",            template: "WHERE <condition>" },
+  { id: "filter_combo", gemId: "filter", keyword: "AND / OR",         template: "WHERE <c1> AND|OR <c2>" },
+  { id: "filter_null",  gemId: "filter", keyword: "IS NULL",          template: "WHERE <column> IS NULL | IS NOT NULL" },
+  { id: "filter_like",  gemId: "filter", keyword: "LIKE",             template: "WHERE <column> LIKE '<pattern>'" },
+  { id: "filter_in",    gemId: "filter", keyword: "IN",               template: "WHERE <column> IN (<v1>, <v2>)" },
+  { id: "select_cols",  gemId: "select", keyword: "SELECT",           template: "SELECT <col1>, <col2> FROM <table>" },
+  { id: "select_dist",  gemId: "select", keyword: "SELECT DISTINCT",  template: "SELECT DISTINCT <column> FROM <table>" },
+  { id: "sort_order",   gemId: "sort",   keyword: "ORDER BY",         template: "ORDER BY <column> ASC|DESC" },
+  { id: "sort_limit",   gemId: "sort",   keyword: "LIMIT",            template: "LIMIT <number>" },
+];
+
+// Brightness rules: walk every concept on the challenge and ratchet the gem up.
+// A gem only ever goes UP; the highest level wins.
+//   Level 1 — first time earning it (any challenge type)
+//   Level 2 — earned in a TRANSFORM challenge (figured it out from the visual diff)
+//   Level 3 — earned in a challenge that combined 3+ concepts
+//   Level 4 — earned in a wrong_tool / diagnose / predict challenge
+function nextGemLevel(prev, challenge) {
+  let level = prev;
+  if (level < 1) level = 1;
+  if (challenge.type === "transform" && level < 2) level = 2;
+  if ((challenge.concepts?.length || 0) >= 3 && level < 3) level = 3;
+  if ((challenge.type === "wrong_tool" || challenge.type === "diagnose" || challenge.type === "predict") && level < 4) level = 4;
+  return level;
+}
+
+// ============================================================
 // SQL ENGINE — tokenize → parse → evaluate
 // Supports: SELECT cols|*, FROM table, optional WHERE with
 //   = != <> > < >= <= , AND OR NOT, IS [NOT] NULL, LIKE, IN, BETWEEN
@@ -246,6 +402,7 @@ function parseQuery(sql) {
   if (isKw("distinct")) { consume(); distinct = true; }
 
   const columns = [];
+  const aliases = {};
   if (peek() && peek().type === "star") {
     consume();
     columns.push("*");
@@ -253,7 +410,15 @@ function parseQuery(sql) {
     while (true) {
       const t = peek();
       if (!t || t.type !== "ident") throw new Error("Expected column name");
-      columns.push(consume().value);
+      const colName = consume().value;
+      columns.push(colName);
+      if (isKw("as")) {
+        consume();
+        const aliasTok = peek();
+        if (!aliasTok || aliasTok.type !== "ident") throw new Error("Expected alias after AS");
+        consume();
+        aliases[colName] = aliasTok.value;
+      }
       if (peek() && peek().type === "comma") { consume(); continue; }
       break;
     }
@@ -385,13 +550,19 @@ function parseQuery(sql) {
     if (next.type === "op") {
       consume();
       const right = consume();
-      if (!right || (right.type !== "number" && right.type !== "string")) throw new Error("Expected literal on right side of comparison");
+      if (!right) throw new Error("Expected literal on right side of comparison");
+      // Allow NULL as the RHS so `col = NULL` parses (and silently matches nothing,
+      // mirroring real SQL semantics). The WRONG TOOL "= NULL" trap relies on this.
+      if (right.type === "ident" && right.value === "null") {
+        return { type: "compare", column: col, op: next.value, value: null };
+      }
+      if (right.type !== "number" && right.type !== "string") throw new Error("Expected literal on right side of comparison");
       return { type: "compare", column: col, op: next.value, value: right.value };
     }
     throw new Error(`Unexpected token in condition: ${next.raw || next.value || next.type}`);
   }
 
-  return { columns, table, where, orderBy, limit, distinct };
+  return { columns, aliases, table, where, orderBy, limit, distinct };
 }
 
 function sortRowsBy(rows, orderBy) {
@@ -459,19 +630,27 @@ function executeQuery(sql, tables) {
   let rows = source;
   if (parsed.where) rows = rows.filter((row) => evalExpr(parsed.where, row));
 
-  let outCols;
+  let srcCols;
   if (parsed.columns.length === 1 && parsed.columns[0] === "*") {
-    outCols = source.length ? Object.keys(source[0]) : [];
+    srcCols = source.length ? Object.keys(source[0]) : [];
   } else {
     for (const c of parsed.columns) {
       if (source.length && !(c in source[0])) throw new Error(`Unknown column: ${c}`);
     }
-    outCols = parsed.columns;
+    srcCols = parsed.columns;
   }
+
+  // Output column names rename source columns via parsed.aliases (e.g.
+  // `imdb_rating AS rating` → output key is "rating"). The original source
+  // names are still used to read values from rows.
+  const aliases = parsed.aliases || {};
+  const outCols = srcCols.map((c) => aliases[c] || c);
 
   let outRows = rows.map((row) => {
     const o = {};
-    for (const c of outCols) o[c] = row[c];
+    for (let i = 0; i < srcCols.length; i++) {
+      o[outCols[i]] = row[srcCols[i]];
+    }
     return o;
   });
 
@@ -521,6 +700,94 @@ function compareResults(actual, expected) {
   const eKeys = expected.rows.map((r) => rowKey(r, cols)).sort();
   for (let i = 0; i < aKeys.length; i++) if (aKeys[i] !== eKeys[i]) return false;
   return true;
+}
+
+// Order-sensitive comparison used by PREDICT challenges.
+// Returns a diagnostic object so we can give granular feedback.
+// `orderMatters` is true only when the target query has an ORDER BY clause —
+// otherwise SQL row order is unspecified and we don't punish the learner for it.
+function diagnosePredict(builderCols, builderRowIdx, sourceRows, expected, orderMatters = true) {
+  const expCols = expected.columns;
+  const expRows = expected.rows;
+
+  // Step 1: columns
+  if (builderCols.length === 0) {
+    return { ok: false, kind: "no_columns", message: "No columns selected — pick the columns the query returns.", expectedColumns: expCols };
+  }
+  const expColSet = new Set(expCols);
+  const userColSet = new Set(builderCols);
+  const missingCols = expCols.filter((c) => !userColSet.has(c));
+  const extraCols = builderCols.filter((c) => !expColSet.has(c));
+  if (missingCols.length || extraCols.length) {
+    return {
+      ok: false,
+      kind: "wrong_columns",
+      message: "Wrong columns.",
+      missingColumns: missingCols,
+      extraColumns: extraCols,
+      expectedColumns: expCols,
+    };
+  }
+  // Same set; check order
+  const sameOrder = builderCols.length === expCols.length && builderCols.every((c, i) => c === expCols[i]);
+  if (!sameOrder) {
+    return {
+      ok: false,
+      kind: "wrong_column_order",
+      message: "Right columns, wrong order.",
+      expectedColumns: expCols,
+    };
+  }
+
+  // Step 2: rows. Project source rows onto the expected columns.
+  const userRows = builderRowIdx.map((i) => {
+    const o = {};
+    for (const c of expCols) o[c] = sourceRows[i][c];
+    return o;
+  });
+
+  if (userRows.length !== expRows.length) {
+    return {
+      ok: false,
+      kind: "wrong_row_count",
+      message: `Expected ${expRows.length} row${expRows.length === 1 ? "" : "s"}, you have ${userRows.length}.`,
+      expectedRowCount: expRows.length,
+      userRowCount: userRows.length,
+    };
+  }
+
+  // Multiset compare (same rows regardless of order?)
+  const userKeys = userRows.map((r) => rowKey(r, expCols));
+  const expKeys = expRows.map((r) => rowKey(r, expCols));
+  const userSorted = [...userKeys].sort();
+  const expSorted = [...expKeys].sort();
+  let multisetMatch = userSorted.length === expSorted.length;
+  if (multisetMatch) {
+    for (let i = 0; i < userSorted.length; i++) {
+      if (userSorted[i] !== expSorted[i]) { multisetMatch = false; break; }
+    }
+  }
+  if (!multisetMatch) {
+    return {
+      ok: false,
+      kind: "wrong_rows",
+      message: "Your rows don't match the result of the query.",
+    };
+  }
+
+  // Same set; check order only if the query specifies one.
+  if (orderMatters) {
+    const orderMatches = userKeys.every((k, i) => k === expKeys[i]);
+    if (!orderMatches) {
+      return {
+        ok: false,
+        kind: "wrong_row_order",
+        message: "Right rows, wrong order — check the sort (ORDER BY).",
+      };
+    }
+  }
+
+  return { ok: true };
 }
 
 // ============================================================
@@ -575,23 +842,219 @@ function HighlightedSql({ text }) {
 // SUB-COMPONENTS
 // ============================================================
 
-function GemBelt() {
+// ============================================================
+// GEM RENDERING — SVG shapes drawn per gem.shape, opacity per level.
+// ============================================================
+
+function GemShape({ shape, color, size = 24 }) {
+  const s = size;
+  const c = s / 2;
+  const stroke = color;
+  const fill = color;
+  switch (shape) {
+    case "triangle":
+      return (
+        <svg viewBox={`0 0 ${s} ${s}`} width={s} height={s} aria-hidden="true">
+          <polygon points={`${c},2 ${s - 2},${s - 2} 2,${s - 2}`} fill={fill} stroke={stroke} strokeWidth="1" strokeLinejoin="round" />
+        </svg>
+      );
+    case "diamond":
+      return (
+        <svg viewBox={`0 0 ${s} ${s}`} width={s} height={s} aria-hidden="true">
+          <polygon points={`${c},2 ${s - 2},${c} ${c},${s - 2} 2,${c}`} fill={fill} stroke={stroke} strokeWidth="1" strokeLinejoin="round" />
+        </svg>
+      );
+    case "rectangle":
+      return (
+        <svg viewBox={`0 0 ${s} ${s}`} width={s} height={s} aria-hidden="true">
+          <rect x="3" y="6" width={s - 6} height={s - 12} rx="2" fill={fill} stroke={stroke} strokeWidth="1" />
+        </svg>
+      );
+    case "circle":
+      return (
+        <svg viewBox={`0 0 ${s} ${s}`} width={s} height={s} aria-hidden="true">
+          <circle cx={c} cy={c} r={c - 2} fill={fill} stroke={stroke} strokeWidth="1" />
+        </svg>
+      );
+    case "hexagon": {
+      const r = c - 2;
+      const pts = [0, 60, 120, 180, 240, 300]
+        .map((deg) => {
+          const a = ((deg - 30) * Math.PI) / 180;
+          return `${(c + r * Math.cos(a)).toFixed(2)},${(c + r * Math.sin(a)).toFixed(2)}`;
+        })
+        .join(" ");
+      return (
+        <svg viewBox={`0 0 ${s} ${s}`} width={s} height={s} aria-hidden="true">
+          <polygon points={pts} fill={fill} stroke={stroke} strokeWidth="1" strokeLinejoin="round" />
+        </svg>
+      );
+    }
+    case "shield":
+      return (
+        <svg viewBox={`0 0 ${s} ${s}`} width={s} height={s} aria-hidden="true">
+          <path
+            d={`M${c},2 L${s - 3},6 L${s - 3},${c + 1} Q${s - 3},${s - 3} ${c},${s - 2} Q3,${s - 3} 3,${c + 1} L3,6 Z`}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth="1"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    case "bridge":
+      return (
+        <svg viewBox={`0 0 ${s} ${s}`} width={s} height={s} aria-hidden="true">
+          <path
+            d={`M3,${s - 6} L3,${c} Q3,4 ${c},4 Q${s - 3},4 ${s - 3},${c} L${s - 3},${s - 6}`}
+            fill="none"
+            stroke={stroke}
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          <line x1="3" y1={s - 6} x2={s - 3} y2={s - 6} stroke={stroke} strokeWidth="2" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+function GemBadge({ gem, level, locked, justLeveled }) {
+  const opacity = GEM_LEVEL_OPACITY[level] ?? 0.15;
+  const isBlazing = level === 4;
+  const isUnlit = level === 0;
+  const drawColor = isUnlit ? "#44403c" : gem.color;
+  const label = GEM_LEVEL_LABEL[level] || "unlit";
+  const tooltip = locked
+    ? `${gem.name} — ${gem.concept} — locked (Layer ${gem.layer})`
+    : `${gem.name} — ${gem.concept} — Level ${level} (${label})`;
+
+  return (
+    <div
+      title={tooltip}
+      className="relative shrink-0 inline-flex items-center justify-center"
+      style={{ width: 32, height: 32 }}
+    >
+      <div
+        className={[
+          "inline-flex items-center justify-center",
+          isBlazing ? "sf-gem-pulse" : "",
+          justLeveled ? "sf-gem-pop" : "",
+        ].join(" ")}
+        style={{
+          opacity,
+          filter: !isUnlit && level >= 2 ? `drop-shadow(0 0 ${level * 2}px ${gem.color}aa)` : "none",
+          transition: "opacity 300ms ease-out, filter 300ms ease-out",
+        }}
+      >
+        <GemShape shape={gem.shape} color={drawColor} size={24} />
+      </div>
+      {locked && (
+        <span
+          className="absolute -bottom-0.5 -right-0.5 inline-flex items-center justify-center rounded-full bg-stone-900 border border-stone-700"
+          style={{ width: 11, height: 11 }}
+        >
+          <Lock size={7} className="text-stone-500" />
+        </span>
+      )}
+    </div>
+  );
+}
+
+function GemBelt({ gems, recentLevelUp }) {
+  const earnedCount = GEMS.filter((g) => (gems[g.id] || 0) > 0).length;
   return (
     <div className="border-b border-stone-800 bg-stone-950/80 px-4 py-2 flex items-center gap-3">
-      <Gem size={16} className="text-stone-600" />
-      <div className="text-xs uppercase tracking-widest text-stone-500">Gem Belt</div>
-      <div className="flex-1 h-8 rounded border border-dashed border-stone-800 flex items-center justify-center">
-        <span className="text-xs text-stone-600 italic">No gems yet — solve challenges to earn your first.</span>
+      <Gem size={16} className="text-stone-600 shrink-0" />
+      <div className="text-xs uppercase tracking-widest text-stone-500 shrink-0">Gem Belt</div>
+      <div className="flex items-center gap-2 overflow-x-auto py-1 flex-1">
+        {GEMS.map((gem) => {
+          const level = gems[gem.id] || 0;
+          const locked = !!gem.layer && gem.layer > UNLOCKED_THROUGH_LAYER;
+          return (
+            <GemBadge
+              key={gem.id}
+              gem={gem}
+              level={locked ? 0 : level}
+              locked={locked}
+              justLeveled={recentLevelUp === gem.id}
+            />
+          );
+        })}
+      </div>
+      <div className="text-[11px] text-stone-500 shrink-0 tabular-nums">
+        {earnedCount}/{GEMS.filter((g) => !g.layer || g.layer <= UNLOCKED_THROUGH_LAYER).length} lit
       </div>
     </div>
   );
 }
 
-function LayerMap({ layers, challenges, currentChallengeIdx, completedIds, onSelectChallenge }) {
+// ============================================================
+// SYNTAX SHELF — collapsible templates beneath the SQL editor.
+// Each template fades / shortens as its gem brightens.
+// ============================================================
+
+function SyntaxShelf({ gems }) {
+  const [open, setOpen] = useState(false);
+  const visible = SYNTAX_TEMPLATES.filter((t) => (gems[t.gemId] || 0) < 4);
+  if (visible.length === 0) {
+    return (
+      <section className="rounded-lg border border-stone-800 bg-stone-900/30 px-3 py-2 text-[11px] text-stone-500 italic">
+        Syntax Shelf — empty. Every template is mastered. Forge on.
+      </section>
+    );
+  }
   return (
-    <aside className="w-64 shrink-0 border-r border-stone-800 bg-stone-950/60 p-4 overflow-y-auto">
+    <section className="rounded-lg border border-stone-800 bg-stone-900/40 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs text-stone-400 hover:text-stone-200 transition-colors"
+      >
+        <span className="inline-flex items-center gap-2">
+          <span className="uppercase tracking-widest text-[10px]">Syntax Shelf</span>
+          <span className="text-stone-600 italic text-[11px]">templates fade as you master them</span>
+        </span>
+        <span className="text-stone-500">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-3 border-t border-stone-800">
+          {visible.map((t) => {
+            const gem = GEM_BY_ID[t.gemId];
+            const level = gems[t.gemId] || 0;
+            const keywordOnly = level >= 3;
+            const display = keywordOnly ? `${t.keyword} …` : t.template;
+            return (
+              <div
+                key={t.id}
+                className="rounded border border-stone-800 bg-stone-950/60 p-2 flex items-center gap-2"
+                title={`${gem.name} · Level ${level} (${GEM_LEVEL_LABEL[level]})`}
+              >
+                <span
+                  className="shrink-0"
+                  style={{
+                    opacity: Math.max(0.35, GEM_LEVEL_OPACITY[level]),
+                    filter: level >= 2 ? `drop-shadow(0 0 3px ${gem.color}99)` : "none",
+                  }}
+                >
+                  <GemShape shape={gem.shape} color={gem.color} size={16} />
+                </span>
+                <span className="font-mono text-[11px] text-stone-200 leading-tight">{display}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LayerMap({ layers, challenges, currentChallengeIdx, completedIds, onSelectChallenge, onResetProgress }) {
+  return (
+    <aside className="w-64 shrink-0 border-r border-stone-800 bg-stone-950/60 p-4 overflow-y-auto flex flex-col">
       <div className="text-xs uppercase tracking-widest text-stone-500 mb-3">The Mine</div>
-      <ol className="space-y-3">
+      <ol className="space-y-3 flex-1">
         {layers.map((layer) => {
           const isCurrent = layer.num === challenges[currentChallengeIdx].layer;
           const layerChallenges = challenges.filter((c) => c.layer === layer.num);
@@ -645,6 +1108,15 @@ function LayerMap({ layers, challenges, currentChallengeIdx, completedIds, onSel
           );
         })}
       </ol>
+      {onResetProgress && (
+        <button
+          onClick={onResetProgress}
+          className="mt-4 text-[11px] text-stone-500 hover:text-rose-300 border border-stone-800 hover:border-rose-500/40 rounded px-2 py-1.5 transition-colors"
+          title="Wipe all gems, completed challenges, and persisted progress."
+        >
+          Reset progress
+        </button>
+      )}
     </aside>
   );
 }
@@ -662,8 +1134,22 @@ function isNumericColumn(rows, col) {
   return false;
 }
 
-function DataTable({ title, columns, rows, variant = "source", maxHeight = "max-h-72" }) {
+function DataTable({
+  title,
+  columns,
+  rows,
+  variant = "source",
+  maxHeight = "max-h-72",
+  selectedRowIndices = null,
+  onRowClick = null,
+}) {
   const isTarget = variant === "target";
+  const clickable = typeof onRowClick === "function";
+  const selectedSet = useMemo(() => {
+    if (!selectedRowIndices) return null;
+    return selectedRowIndices instanceof Set ? selectedRowIndices : new Set(selectedRowIndices);
+  }, [selectedRowIndices]);
+
   return (
     <section
       className={`rounded-lg border ${isTarget ? "border-amber-500/50 shadow-[0_0_0_1px_rgba(245,158,11,0.15)]" : "border-stone-800"} bg-stone-900/50 overflow-hidden`}
@@ -674,6 +1160,9 @@ function DataTable({ title, columns, rows, variant = "source", maxHeight = "max-
             {isTarget ? "Target" : "Source"}
           </span>
           <span className="text-sm text-stone-200 font-medium">{title}</span>
+          {clickable && (
+            <span className="text-[10px] text-cyan-300/80 italic ml-1">click rows to pick</span>
+          )}
         </div>
         <span className="text-[11px] text-stone-500">
           {rows.length} row{rows.length === 1 ? "" : "s"} · {columns.length} col{columns.length === 1 ? "" : "s"}
@@ -704,30 +1193,44 @@ function DataTable({ title, columns, rows, variant = "source", maxHeight = "max-
                 </td>
               </tr>
             )}
-            {rows.map((row, ri) => (
-              <tr key={ri} className={ri % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}>
-                {columns.map((c) => {
-                  const v = row[c];
-                  const num = isNumericColumn(rows, c);
-                  const display = formatCell(v);
-                  return (
-                    <td
-                      key={c}
-                      className={`px-3 py-1.5 border-b border-stone-800/50 align-top ${num ? "text-right tabular-nums" : "text-left"}`}
-                    >
-                      {display === null ? (
-                        <span
-                          className="inline-block w-10 h-3 rounded-sm border border-dashed border-stone-700 bg-stone-950/70 align-middle"
-                          title="NULL"
-                        />
-                      ) : (
-                        <span className="text-stone-200 whitespace-pre">{display}</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {rows.map((row, ri) => {
+              const selected = selectedSet ? selectedSet.has(ri) : false;
+              const baseBg = ri % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20";
+              const rowClass = [
+                baseBg,
+                clickable ? "cursor-pointer hover:bg-cyan-500/10 transition-colors" : "",
+                selected ? "ring-1 ring-amber-400/40" : "",
+              ].join(" ");
+              return (
+                <tr
+                  key={ri}
+                  className={rowClass}
+                  onClick={clickable ? () => onRowClick(ri) : undefined}
+                  style={selected ? { boxShadow: "inset 4px 0 0 0 rgb(251,191,36)" } : undefined}
+                >
+                  {columns.map((c) => {
+                    const v = row[c];
+                    const num = isNumericColumn(rows, c);
+                    const display = formatCell(v);
+                    return (
+                      <td
+                        key={c}
+                        className={`px-3 py-1.5 border-b border-stone-800/50 align-top ${num ? "text-right tabular-nums" : "text-left"}`}
+                      >
+                        {display === null ? (
+                          <span
+                            className="inline-block w-10 h-3 rounded-sm border border-dashed border-stone-700 bg-stone-950/70 align-middle"
+                            title="NULL"
+                          />
+                        ) : (
+                          <span className="text-stone-200 whitespace-pre">{display}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -871,17 +1374,19 @@ function ResultComparison({ actual, expected, errorMessage }) {
 // ============================================================
 
 const PHASE_LABEL = {
-  filtering: "WHERE — filtering rows",
-  selecting: "SELECT — choosing columns",
-  sorting:   "ORDER BY — sorting",
-  limiting:  "LIMIT — taking top N",
-  complete:  "transformation complete",
+  filtering:    "WHERE — filtering rows",
+  selecting:    "SELECT — choosing columns",
+  distincting:  "DISTINCT — removing duplicates",
+  sorting:      "ORDER BY — sorting",
+  limiting:     "LIMIT — taking top N",
+  complete:     "transformation complete",
 };
 
 function computeFirstPhase(parsed, allColumns) {
   if (parsed.where) return "filtering";
   if (!(parsed.columns.length === 1 && parsed.columns[0] === "*") &&
       parsed.columns.length < allColumns.length) return "selecting";
+  if (parsed.distinct) return "distincting";
   if (parsed.orderBy && parsed.orderBy.length) return "sorting";
   if (parsed.limit != null) return "limiting";
   return null;
@@ -938,6 +1443,42 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
         );
         setCollapsedCols(collapse);
         await wait(400 + 200);
+        if (cancelled) return;
+      }
+
+      // 2.5) DISTINCT — runs after SELECT projection, before ORDER BY.
+      // Drop later rows whose visible-column values duplicate an earlier row.
+      if (parsed.distinct) {
+        announce("distincting");
+        const visibleSrc =
+          parsed.columns.length === 1 && parsed.columns[0] === "*"
+            ? sourceColumns
+            : parsed.columns;
+        const seen = new Set();
+        const dropDup = new Set();
+        for (const srcIdx of currentOrder) {
+          const r = sourceRows[srcIdx];
+          const key = visibleSrc
+            .map((c) => (r[c] == null ? " NULL" : String(r[c])))
+            .join("");
+          if (seen.has(key)) dropDup.add(srcIdx);
+          else seen.add(key);
+        }
+        if (dropDup.size > 0) {
+          setHiddenRows((prev) => {
+            const next = new Set(prev);
+            dropDup.forEach((i) => next.add(i));
+            return next;
+          });
+          const maxStagger = Math.max(0, dropDup.size - 1) * 50;
+          await wait(400 + maxStagger + 300);
+          if (cancelled) return;
+          currentOrder = currentOrder.filter((i) => !dropDup.has(i));
+          setRowOrder(currentOrder);
+          await wait(80);
+        } else {
+          await wait(400);
+        }
         if (cancelled) return;
       }
 
@@ -1019,7 +1560,7 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
   // applied, the 600ms ease-in-out animates the slide. 'settling' disables
   // transitions so the rowOrder/transform reset happens instantly.
   const rowTransitionFor = (visualIdx) => {
-    if (phase === "filtering" || phase === "limiting") {
+    if (phase === "filtering" || phase === "limiting" || phase === "distincting") {
       const delay = visualIdx * 50;
       return `opacity 400ms ease-out ${delay}ms, transform 400ms ease-out ${delay}ms`;
     }
@@ -1440,6 +1981,575 @@ function PipelineReference({ pipeline, onEdit }) {
 }
 
 // ============================================================
+// PREDICT — query card + ResultBuilder
+// ============================================================
+
+function PredictQueryCard({ sql }) {
+  return (
+    <section className="rounded-lg border border-cyan-500/40 bg-stone-950/70 overflow-hidden mb-4 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]">
+      <header className="px-3 py-2 border-b border-cyan-500/20 bg-cyan-500/5 flex items-center gap-2">
+        <Sparkles size={12} className="text-cyan-300" />
+        <span className="text-[10px] uppercase tracking-widest text-cyan-300">Read this query</span>
+        <span className="text-[11px] text-stone-500 italic">execute it in your head — then build the result</span>
+      </header>
+      <pre
+        className="px-4 py-3 m-0 text-sm leading-6 whitespace-pre-wrap break-words text-stone-200"
+        style={{ fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace' }}
+      >
+        <HighlightedSql text={sql} />
+      </pre>
+    </section>
+  );
+}
+
+function ResultBuilder({
+  sourceColumns,
+  sourceRows,
+  builderCols,
+  builderRowIdx,
+  onToggleColumn,
+  onClearColumns,
+  onRemoveRow,
+  onMoveRow,
+  onClearRows,
+  onCheck,
+  status,
+  feedback,
+  disabled,
+}) {
+  const borderClass =
+    status === "correct"
+      ? "border-emerald-500/70 shadow-[0_0_0_3px_rgba(16,185,129,0.15)]"
+      : status === "wrong"
+      ? "border-rose-500/60 shadow-[0_0_0_2px_rgba(244,63,94,0.1)]"
+      : "border-cyan-500/40";
+
+  const hasAnything = builderCols.length > 0 || builderRowIdx.length > 0;
+
+  return (
+    <section className={`rounded-lg border-2 ${borderClass} bg-stone-900/50 overflow-hidden transition-shadow`}>
+      <header className="px-3 py-2 border-b border-stone-800 bg-stone-950/60 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-widest text-cyan-300">Result Builder</span>
+          <span className="text-sm text-stone-200 font-medium">build the result by hand</span>
+        </div>
+        <span className="text-[11px] text-stone-500">
+          {builderRowIdx.length} row{builderRowIdx.length === 1 ? "" : "s"} · {builderCols.length} col{builderCols.length === 1 ? "" : "s"}
+        </span>
+      </header>
+
+      <div className="p-3 space-y-3">
+        {/* Column picker */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-[10px] uppercase tracking-widest text-stone-500">
+              Columns · click to add, click again to remove
+            </div>
+            {builderCols.length > 0 && (
+              <button
+                onClick={onClearColumns}
+                disabled={disabled}
+                className="text-[10px] text-stone-500 hover:text-stone-300 inline-flex items-center gap-1 disabled:opacity-50"
+              >
+                <Eraser size={10} /> clear columns
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {sourceColumns.map((c) => {
+              const orderIdx = builderCols.indexOf(c);
+              const selected = orderIdx !== -1;
+              return (
+                <button
+                  key={c}
+                  onClick={() => onToggleColumn(c)}
+                  disabled={disabled}
+                  className={[
+                    "inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-mono transition-colors select-none",
+                    selected
+                      ? "border-amber-400/70 bg-amber-500/15 text-amber-100"
+                      : "border-stone-700 bg-stone-900/60 text-stone-400 hover:border-cyan-400/50 hover:text-cyan-200",
+                    disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
+                  ].join(" ")}
+                  title={selected ? "Remove column" : "Add column"}
+                >
+                  {selected && (
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/30 text-[9px] text-amber-100 font-semibold">
+                      {orderIdx + 1}
+                    </span>
+                  )}
+                  <span>{c}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Result grid */}
+        <div className="rounded-md border border-cyan-500/30 bg-stone-950/60 overflow-hidden">
+          {builderCols.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-stone-600 italic">
+              Pick the columns the query returns by clicking the pills above.
+            </div>
+          ) : builderRowIdx.length === 0 ? (
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-stone-950">
+                  {builderCols.map((c) => {
+                    const num = isNumericColumn(sourceRows, c);
+                    return (
+                      <th
+                        key={c}
+                        className={`px-3 py-2 font-mono font-semibold text-amber-200/80 border-b border-cyan-500/20 whitespace-nowrap ${num ? "text-right" : "text-left"}`}
+                      >
+                        {c}
+                      </th>
+                    );
+                  })}
+                  <th className="w-20 border-b border-cyan-500/20" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="px-3 py-6 text-center text-xs text-stone-600 italic" colSpan={builderCols.length + 1}>
+                    Now click rows in the source table to add them.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            <div className="overflow-auto max-h-64">
+              <table className="w-full text-xs border-collapse">
+                <thead className="sticky top-0">
+                  <tr className="bg-stone-950">
+                    {builderCols.map((c) => {
+                      const num = isNumericColumn(sourceRows, c);
+                      return (
+                        <th
+                          key={c}
+                          className={`px-3 py-2 font-mono font-semibold text-amber-200/80 border-b border-cyan-500/20 whitespace-nowrap ${num ? "text-right" : "text-left"}`}
+                        >
+                          {c}
+                        </th>
+                      );
+                    })}
+                    <th className="w-20 border-b border-cyan-500/20" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {builderRowIdx.map((srcIdx, ri) => {
+                    const row = sourceRows[srcIdx];
+                    return (
+                      <tr key={`${srcIdx}-${ri}`} className={ri % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}>
+                        {builderCols.map((c) => {
+                          const num = isNumericColumn(sourceRows, c);
+                          const display = formatCell(row[c]);
+                          return (
+                            <td
+                              key={c}
+                              className={`px-3 py-1.5 border-b border-stone-800/50 align-middle ${num ? "text-right tabular-nums" : "text-left"}`}
+                            >
+                              {display === null ? (
+                                <span
+                                  className="inline-block w-10 h-3 rounded-sm border border-dashed border-stone-700 bg-stone-950/70 align-middle"
+                                  title="NULL"
+                                />
+                              ) : (
+                                <span className="text-stone-200 whitespace-pre">{display}</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-2 py-1 border-b border-stone-800/50 align-middle">
+                          <div className="flex items-center justify-end gap-0.5">
+                            <button
+                              onClick={() => onMoveRow(ri, -1)}
+                              disabled={disabled || ri === 0}
+                              className="p-1 rounded text-stone-500 hover:text-cyan-300 hover:bg-stone-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move up"
+                              aria-label="Move up"
+                            >
+                              <ChevronUp size={12} />
+                            </button>
+                            <button
+                              onClick={() => onMoveRow(ri, 1)}
+                              disabled={disabled || ri === builderRowIdx.length - 1}
+                              className="p-1 rounded text-stone-500 hover:text-cyan-300 hover:bg-stone-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move down"
+                              aria-label="Move down"
+                            >
+                              <ChevronDown size={12} />
+                            </button>
+                            <button
+                              onClick={() => onRemoveRow(ri)}
+                              disabled={disabled}
+                              className="p-1 rounded text-stone-500 hover:text-rose-300 hover:bg-stone-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Remove from result"
+                              aria-label="Remove row"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom action row */}
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            {builderRowIdx.length > 0 && (
+              <button
+                onClick={onClearRows}
+                disabled={disabled}
+                className="text-[10px] text-stone-500 hover:text-stone-300 inline-flex items-center gap-1 disabled:opacity-50"
+              >
+                <Eraser size={10} /> clear rows
+              </button>
+            )}
+          </div>
+          <button
+            onClick={onCheck}
+            disabled={disabled || !hasAnything}
+            className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors disabled:bg-stone-700 disabled:text-stone-500 disabled:cursor-not-allowed"
+          >
+            <Check size={12} /> Check Result
+          </button>
+        </div>
+
+        {/* Granular feedback */}
+        {feedback && !feedback.ok && (
+          <div className="rounded-md border border-rose-500/40 bg-rose-950/20 px-3 py-2 text-xs text-rose-200 space-y-1">
+            <div className="font-semibold text-rose-200">{feedback.message}</div>
+            {feedback.kind === "wrong_columns" && (
+              <div className="text-rose-300/90">
+                {feedback.missingColumns?.length > 0 && (
+                  <div>Missing: <span className="font-mono text-amber-200">{feedback.missingColumns.join(", ")}</span></div>
+                )}
+                {feedback.extraColumns?.length > 0 && (
+                  <div>Shouldn't be here: <span className="font-mono text-rose-200">{feedback.extraColumns.join(", ")}</span></div>
+                )}
+              </div>
+            )}
+            {feedback.kind === "wrong_column_order" && (
+              <div className="text-rose-300/90">
+                Expected order: <span className="font-mono text-amber-200">{feedback.expectedColumns.join(", ")}</span>
+              </div>
+            )}
+            {feedback.kind === "wrong_rows" && (
+              <div className="text-rose-300/90 italic">
+                Walk through the WHERE clause row by row — which source rows actually pass it?
+              </div>
+            )}
+            {feedback.kind === "wrong_row_order" && (
+              <div className="text-rose-300/90 italic">
+                Use the ↑↓ arrows on each row to fix the order.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ============================================================
+// WRONG TOOL — hint panel shown after the obvious-wrong query is submitted
+// ============================================================
+
+function WrongToolHint({ message }) {
+  return (
+    <section className="rounded-lg border border-amber-500/40 bg-amber-950/20 p-3 mb-3">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-500/15 text-amber-300 shrink-0 mt-0.5">
+          <Lightbulb size={14} />
+        </span>
+        <div className="flex-1">
+          <div className="text-amber-300 text-xs font-semibold uppercase tracking-widest mb-1">Hint</div>
+          <div className="text-sm text-amber-100 leading-relaxed">{message}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ============================================================
+// DIAGNOSE — broken query + wrong/expected + diagnostic options
+// ============================================================
+
+function DiagnoseOption({ opt, isSelected, status, isCorrect, onSelect, disabled }) {
+  // Visual state:
+  //   - idle/unselected: stone border
+  //   - idle/selected: cyan border + filled radio
+  //   - after correct submit: correct = emerald border + check; wrong-selected = rose border + x
+  //   - after wrong submit: selected wrong = rose border + x
+  let optClass;
+  let circleClass;
+  let circleInner = null;
+  let trailingIcon = null;
+
+  if (status === "correct") {
+    if (isCorrect) {
+      optClass = "border-emerald-500/70 bg-emerald-950/20";
+      circleClass = "border-emerald-400 bg-emerald-400";
+      circleInner = <span className="w-1.5 h-1.5 rounded-full bg-stone-950" />;
+      trailingIcon = <Check size={14} className="text-emerald-300" />;
+    } else if (isSelected) {
+      optClass = "border-rose-500/70 bg-rose-950/20";
+      circleClass = "border-rose-400 bg-rose-400";
+      circleInner = <span className="w-1.5 h-1.5 rounded-full bg-stone-950" />;
+      trailingIcon = <X size={14} className="text-rose-300" />;
+    } else {
+      optClass = "border-stone-800 bg-stone-950/40 opacity-60";
+      circleClass = "border-stone-600";
+    }
+  } else if (status === "wrong" && isSelected) {
+    optClass = "border-rose-500/70 bg-rose-950/20";
+    circleClass = "border-rose-400 bg-rose-400";
+    circleInner = <span className="w-1.5 h-1.5 rounded-full bg-stone-950" />;
+    trailingIcon = <X size={14} className="text-rose-300" />;
+  } else if (isSelected) {
+    optClass = "border-cyan-400/70 bg-cyan-500/10";
+    circleClass = "border-cyan-400 bg-cyan-400";
+    circleInner = <span className="w-1.5 h-1.5 rounded-full bg-stone-950" />;
+  } else {
+    optClass = "border-stone-700 bg-stone-950/40 hover:border-cyan-500/40 hover:bg-stone-900/70";
+    circleClass = "border-stone-600";
+  }
+
+  return (
+    <button
+      onClick={() => !disabled && onSelect(opt.id)}
+      disabled={disabled}
+      className={`w-full text-left rounded-md border-2 px-3 py-2.5 flex items-start gap-3 transition-colors ${optClass} ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+    >
+      <span className={`mt-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full border-2 shrink-0 ${circleClass}`}>
+        {circleInner}
+      </span>
+      <span className="text-sm text-stone-200 leading-relaxed flex-1">{opt.text}</span>
+      {trailingIcon && <span className="shrink-0 mt-0.5">{trailingIcon}</span>}
+    </button>
+  );
+}
+
+function DiagnoseChallenge({
+  challenge,
+  sourceColumns,
+  sourceRows,
+  selectedId,
+  onSelect,
+  onDiagnose,
+  status,
+}) {
+  const brokenResult = useMemo(() => {
+    try {
+      return { result: executeQuery(challenge.brokenSql, TABLES), error: null };
+    } catch (e) {
+      return { result: null, error: e.message || String(e) };
+    }
+  }, [challenge.brokenSql]);
+
+  const expected = useMemo(() => {
+    try {
+      return executeQuery(challenge.targetSql, TABLES);
+    } catch {
+      return { columns: [], rows: [] };
+    }
+  }, [challenge.targetSql]);
+
+  const locked = status === "correct";
+  const optionsBorder =
+    status === "correct"
+      ? "border-emerald-500/60 shadow-[0_0_0_3px_rgba(16,185,129,0.15)]"
+      : status === "wrong"
+      ? "border-rose-500/60 sf-shake"
+      : "border-stone-800";
+
+  return (
+    <>
+      {/* Broken SQL — rose-themed card */}
+      <section className="rounded-lg border border-rose-500/40 bg-rose-950/20 overflow-hidden mb-4 shadow-[0_0_0_1px_rgba(244,63,94,0.08)]">
+        <header className="px-3 py-2 border-b border-rose-500/30 bg-rose-500/5 flex items-center gap-2">
+          <AlertTriangle size={12} className="text-rose-300" />
+          <span className="text-[10px] uppercase tracking-widest text-rose-300">Broken Query</span>
+          <span className="text-[11px] text-stone-500 italic">this query produces the wrong result — figure out why</span>
+        </header>
+        <pre
+          className="px-4 py-3 m-0 text-sm leading-6 whitespace-pre-wrap break-words text-stone-200"
+          style={{ fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace' }}
+        >
+          <HighlightedSql text={challenge.brokenSql} />
+        </pre>
+      </section>
+
+      {/* Source table — full width above the comparison */}
+      <div className="mb-4">
+        <DataTable title="shows" columns={sourceColumns} rows={sourceRows} variant="source" maxHeight="max-h-64" />
+      </div>
+
+      {/* Wrong + Expected side-by-side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        {brokenResult.error ? (
+          <section className="rounded-lg border border-rose-500/50 bg-rose-950/10 overflow-hidden">
+            <header className="px-3 py-2 border-b border-rose-500/30 bg-rose-500/5 flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-widest text-rose-300">Wrong Result</span>
+              <span className="text-sm text-stone-200 font-medium">query errored</span>
+            </header>
+            <div className="px-3 py-4 text-sm text-rose-200">
+              <span className="font-semibold">Query Error:</span> {brokenResult.error}
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-lg border border-rose-500/50 bg-rose-950/10 overflow-hidden">
+            <header className="px-3 py-2 flex items-center justify-between border-b border-rose-500/30 bg-rose-500/5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-widest text-rose-300">Wrong Result</span>
+                <span className="text-sm text-stone-200 font-medium">what the broken query returns</span>
+              </div>
+              <span className="text-[11px] text-stone-500">
+                {brokenResult.result.rows.length} row{brokenResult.result.rows.length === 1 ? "" : "s"} · {brokenResult.result.columns.length} col{brokenResult.result.columns.length === 1 ? "" : "s"}
+              </span>
+            </header>
+            <div className="overflow-auto max-h-64">
+              <table className="w-full text-xs border-collapse">
+                <thead className="sticky top-0">
+                  <tr className="bg-stone-950">
+                    {brokenResult.result.columns.map((c) => {
+                      const num = isNumericColumn(brokenResult.result.rows, c);
+                      return (
+                        <th
+                          key={c}
+                          className={`px-3 py-2 font-mono font-semibold text-rose-200/80 border-b border-rose-500/20 whitespace-nowrap ${num ? "text-right" : "text-left"}`}
+                        >
+                          {c}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {brokenResult.result.rows.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-6 text-center text-stone-600 italic" colSpan={Math.max(brokenResult.result.columns.length, 1)}>
+                        (no rows)
+                      </td>
+                    </tr>
+                  )}
+                  {brokenResult.result.rows.map((row, ri) => (
+                    <tr key={ri} className={ri % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}>
+                      {brokenResult.result.columns.map((c) => {
+                        const num = isNumericColumn(brokenResult.result.rows, c);
+                        const display = formatCell(row[c]);
+                        return (
+                          <td
+                            key={c}
+                            className={`px-3 py-1.5 border-b border-stone-800/50 align-top ${num ? "text-right tabular-nums" : "text-left"}`}
+                          >
+                            {display === null ? (
+                              <span className="inline-block w-10 h-3 rounded-sm border border-dashed border-stone-700 bg-stone-950/70 align-middle" title="NULL" />
+                            ) : (
+                              <span className="text-stone-200 whitespace-pre">{display}</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+        <DataTable
+          title="expected result"
+          columns={expected.columns}
+          rows={expected.rows}
+          variant="target"
+          maxHeight="max-h-64"
+        />
+      </div>
+
+      {/* Diagnostic options */}
+      <section className={`rounded-lg border-2 ${optionsBorder} bg-stone-900/50 p-3 mb-4 transition-shadow`}>
+        <header className="mb-3 flex items-center gap-2">
+          <Stethoscope size={14} className="text-cyan-300" />
+          <span className="text-[10px] uppercase tracking-widest text-cyan-300">Diagnosis</span>
+          <span className="text-sm text-stone-200 font-medium">what's wrong with this query?</span>
+        </header>
+        <div className="space-y-2">
+          {challenge.options.map((opt) => (
+            <DiagnoseOption
+              key={opt.id}
+              opt={opt}
+              isSelected={selectedId === opt.id}
+              isCorrect={opt.id === challenge.correctOption}
+              status={status}
+              onSelect={onSelect}
+              disabled={locked}
+            />
+          ))}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="text-[11px] italic min-h-[1.25rem]">
+            {status === "wrong" && (
+              <span className="text-rose-300">
+                Not quite — think about WHEN in the execution order each clause runs.
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onDiagnose}
+            disabled={!selectedId || locked}
+            className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors disabled:bg-stone-700 disabled:text-stone-500 disabled:cursor-not-allowed"
+          >
+            <Stethoscope size={12} /> Diagnose
+          </button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+// ============================================================
+// PERSISTENCE — window.storage. Guarded so artifacts without it still run.
+// ============================================================
+
+const STORAGE_KEY = "sql-forge-state";
+
+function storageAvailable() {
+  return typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
+}
+
+async function saveState(state) {
+  if (!storageAvailable()) return;
+  try {
+    await window.storage.set(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error("Storage save failed:", e);
+  }
+}
+
+async function loadState() {
+  if (!storageAvailable()) return null;
+  try {
+    const result = await window.storage.get(STORAGE_KEY);
+    if (!result) return null;
+    const raw = typeof result === "string" ? result : result.value;
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error("Storage load failed:", e);
+    return null;
+  }
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 
@@ -1456,6 +2566,37 @@ export default function SqlForge() {
     };
   }, []);
 
+  // Hydrate persisted state from window.storage on mount. Falls through silently
+  // if window.storage isn't available or parsing fails — we just start fresh.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const data = await loadState();
+      if (cancelled) return;
+      if (data) {
+        if (data.gems && typeof data.gems === "object") {
+          setGems((prev) => {
+            const next = { ...prev };
+            for (const g of GEMS) {
+              const v = data.gems[g.id];
+              if (typeof v === "number" && v >= 0 && v <= 4) next[g.id] = v;
+            }
+            return next;
+          });
+        }
+        if (Array.isArray(data.completed)) {
+          setCompleted(data.completed.filter((id) => CHALLENGES.some((c) => c.id === id)));
+        }
+        if (typeof data.currentChallenge === "string") {
+          const idx = CHALLENGES.findIndex((c) => c.id === data.currentChallenge);
+          if (idx >= 0) setCurrentIdx(idx);
+        }
+      }
+      setHydrated(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const [currentIdx, setCurrentIdx] = useState(0);
   const [queries, setQueries] = useState(() => Object.fromEntries(CHALLENGES.map((c) => [c.id, ""])));
   const [statusById, setStatusById] = useState({}); // id -> "correct" | "wrong"
@@ -1468,11 +2609,30 @@ export default function SqlForge() {
   const [pipelineConfirmed, setPipelineConfirmed] = useState({}); // id -> boolean
   const editorAnchorRef = useRef(null);
 
+  // PREDICT state — per-challenge builder, current-challenge feedback
+  const [predictBuilders, setPredictBuilders] = useState(() =>
+    Object.fromEntries(CHALLENGES.map((c) => [c.id, { cols: [], rows: [] }]))
+  );
+  const [predictFeedback, setPredictFeedback] = useState(null);
+
+  // DIAGNOSE state — per-challenge selected option id
+  const [diagnoseSelections, setDiagnoseSelections] = useState(() =>
+    Object.fromEntries(CHALLENGES.filter((c) => c.type === "diagnose").map((c) => [c.id, null]))
+  );
+
   // Animation orchestration: phase is reported up by AnimationStage as it runs.
   // 'idle' before/after any animation; sub-phases while running; 'complete' at the end.
   const [animationPhase, setAnimationPhase] = useState("idle");
   const [animationParsed, setAnimationParsed] = useState(null);
   const [skipAnimations, setSkipAnimations] = useState(false);
+
+  // Gem brightness levels: { [gemId]: 0..4 }. Start every gem at 0 (unlit).
+  const [gems, setGems] = useState(() => Object.fromEntries(GEMS.map((g) => [g.id, 0])));
+  // The gem ID that most recently changed level — drives a brief pop animation.
+  const [recentLevelUp, setRecentLevelUp] = useState(null);
+  // Defer persistence until after the initial load attempt completes, so we don't
+  // overwrite saved state with the fresh defaults on first render.
+  const [hydrated, setHydrated] = useState(false);
 
   const animating =
     animationPhase !== "idle" && animationPhase !== "complete";
@@ -1482,6 +2642,9 @@ export default function SqlForge() {
   const query = queries[challenge.id] || "";
 
   const isOpBuilder = challenge.type === "operation_builder";
+  const isPredict = challenge.type === "predict";
+  const isWrongTool = challenge.type === "wrong_tool";
+  const isDiagnose = challenge.type === "diagnose";
   const pipeline = pipelines[challenge.id] || [];
   const pipelineFilled = pipeline.filter(Boolean);
   const pipelineValidation = useMemo(() => validatePipeline(pipelineFilled), [pipelineFilled]);
@@ -1489,6 +2652,8 @@ export default function SqlForge() {
   const canConfirmPipeline = isOpBuilder && pipelineMatches && !pipelineValidation.hasErrors;
   const isPipelineConfirmed = !!pipelineConfirmed[challenge.id];
   const editorLocked = isOpBuilder && !isPipelineConfirmed;
+
+  const builderState = predictBuilders[challenge.id] || { cols: [], rows: [] };
 
   const expectedResult = useMemo(() => {
     try {
@@ -1501,6 +2666,60 @@ export default function SqlForge() {
   // For the "source" table panel we always show the full underlying table.
   const sourceColumns = SHOW_COLUMN_ORDER;
   const sourceRows = SHOWS_DATA;
+
+  // Persist gems + completed + current challenge whenever any of them changes.
+  // Held until hydration finishes so we don't blow away saved state on first render.
+  useEffect(() => {
+    if (!hydrated) return;
+    saveState({ gems, completed, currentChallenge: challenge.id });
+  }, [hydrated, gems, completed, challenge.id]);
+
+  // Earn gems for the just-correctly-solved challenge. Each concept ratchets up
+  // to the level its challenge type / breadth warrants. Pop animation triggers
+  // for the gem with the largest jump.
+  const earnGemsForChallenge = (ch) => {
+    if (!ch.concepts || ch.concepts.length === 0) return;
+    setGems((prev) => {
+      const next = { ...prev };
+      let topGain = 0;
+      let popId = null;
+      for (const concept of ch.concepts) {
+        if (!GEM_BY_ID[concept]) continue;
+        const before = next[concept] || 0;
+        const after = nextGemLevel(before, ch);
+        if (after > before) {
+          next[concept] = after;
+          const gain = after - before;
+          if (gain > topGain) { topGain = gain; popId = concept; }
+        }
+      }
+      if (popId) {
+        setRecentLevelUp(popId);
+        setTimeout(() => setRecentLevelUp((cur) => (cur === popId ? null : cur)), 500);
+      }
+      return next;
+    });
+  };
+
+  const handleResetProgress = () => {
+    if (typeof window !== "undefined" && typeof window.confirm === "function") {
+      if (!window.confirm("Reset all progress? Gems, completed challenges, and saved position will be wiped.")) return;
+    }
+    setGems(Object.fromEntries(GEMS.map((g) => [g.id, 0])));
+    setCompleted([]);
+    setStatusById({});
+    setCurrentIdx(0);
+    setActualByCurrent(null);
+    setErrorByCurrent(null);
+    setAnimationPhase("idle");
+    setAnimationParsed(null);
+    setPredictFeedback(null);
+    setPipelineConfirmed({});
+    setPredictBuilders(Object.fromEntries(CHALLENGES.map((c) => [c.id, { cols: [], rows: [] }])));
+    setDiagnoseSelections(Object.fromEntries(CHALLENGES.filter((c) => c.type === "diagnose").map((c) => [c.id, null])));
+    setQueries(Object.fromEntries(CHALLENGES.map((c) => [c.id, ""])));
+    setPipelines(Object.fromEntries(CHALLENGES.map((c) => [c.id, []])));
+  };
 
   const handleSubmit = () => {
     if (animating) return;
@@ -1521,6 +2740,7 @@ export default function SqlForge() {
         setActualByCurrent(actual);
         setErrorByCurrent(null);
         setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
+        earnGemsForChallenge(challenge);
 
         if (skipAnimations) {
           setAnimationParsed(null);
@@ -1558,6 +2778,97 @@ export default function SqlForge() {
     setErrorByCurrent(null);
     setAnimationPhase("idle");
     setAnimationParsed(null);
+    setPredictFeedback(null);
+  };
+
+  // ---- PREDICT handlers ----
+  const setBuilder = (next) => {
+    setPredictBuilders((p) => ({ ...p, [challenge.id]: next }));
+    setPredictFeedback(null);
+    if (statusById[challenge.id] === "wrong") {
+      setStatusById((s) => {
+        const copy = { ...s };
+        delete copy[challenge.id];
+        return copy;
+      });
+    }
+  };
+
+  const togglePredictColumn = (col) => {
+    const cur = builderState.cols;
+    const idx = cur.indexOf(col);
+    if (idx === -1) setBuilder({ ...builderState, cols: [...cur, col] });
+    else            setBuilder({ ...builderState, cols: cur.filter((c) => c !== col) });
+  };
+
+  const clearPredictColumns = () => setBuilder({ ...builderState, cols: [] });
+
+  const togglePredictSourceRow = (i) => {
+    const cur = builderState.rows;
+    const at = cur.indexOf(i);
+    if (at === -1) setBuilder({ ...builderState, rows: [...cur, i] });
+    else           setBuilder({ ...builderState, rows: cur.filter((x) => x !== i) });
+  };
+
+  const removePredictRow = (i) => {
+    const cur = [...builderState.rows];
+    cur.splice(i, 1);
+    setBuilder({ ...builderState, rows: cur });
+  };
+
+  const movePredictRow = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= builderState.rows.length) return;
+    const cur = [...builderState.rows];
+    [cur[i], cur[j]] = [cur[j], cur[i]];
+    setBuilder({ ...builderState, rows: cur });
+  };
+
+  const clearPredictRows = () => setBuilder({ ...builderState, rows: [] });
+
+  const handleCheckPredict = () => {
+    if (animating) return;
+    let expected;
+    let parsedTarget = null;
+    try {
+      expected = executeQuery(challenge.targetSql, TABLES);
+      parsedTarget = parseQuery(challenge.targetSql);
+    } catch {
+      expected = { columns: [], rows: [] };
+    }
+    const orderMatters = !!(parsedTarget && parsedTarget.orderBy && parsedTarget.orderBy.length);
+    const diag = diagnosePredict(builderState.cols, builderState.rows, sourceRows, expected, orderMatters);
+    setPredictFeedback(diag);
+    if (diag.ok) {
+      setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
+      setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
+      earnGemsForChallenge(challenge);
+      setActualByCurrent(null);
+      setErrorByCurrent(null);
+      if (skipAnimations) {
+        setAnimationParsed(null);
+        setAnimationPhase("idle");
+      } else {
+        try {
+          const parsed = parseQuery(challenge.targetSql);
+          const first = computeFirstPhase(parsed, sourceColumns);
+          if (first) {
+            setAnimationParsed(parsed);
+            setAnimationPhase(first);
+          } else {
+            setAnimationParsed(null);
+            setAnimationPhase("idle");
+          }
+        } catch {
+          setAnimationParsed(null);
+          setAnimationPhase("idle");
+        }
+      }
+    } else {
+      setStatusById((s) => ({ ...s, [challenge.id]: "wrong" }));
+      setAnimationPhase("idle");
+      setAnimationParsed(null);
+    }
   };
 
   const handleNext = () => goToChallenge(currentIdx + 1);
@@ -1584,9 +2895,46 @@ export default function SqlForge() {
     setPipelineConfirmed((c) => ({ ...c, [challenge.id]: false }));
   };
 
-  const badge = isOpBuilder
-    ? { icon: "🔧", label: "Build the Pipeline" }
-    : { icon: "⚒️", label: "Forge the Query" };
+  // DIAGNOSE handlers
+  const diagnoseSelected = isDiagnose ? diagnoseSelections[challenge.id] || null : null;
+  const selectDiagnoseOption = (optId) => {
+    setDiagnoseSelections((s) => ({ ...s, [challenge.id]: optId }));
+    // Clear a prior wrong status so the user can re-pick without lingering shake.
+    if (statusById[challenge.id] === "wrong") {
+      setStatusById((s) => {
+        const copy = { ...s };
+        delete copy[challenge.id];
+        return copy;
+      });
+    }
+  };
+  const handleDiagnoseSubmit = () => {
+    if (!diagnoseSelected) return;
+    if (diagnoseSelected === challenge.correctOption) {
+      setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
+      setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
+      earnGemsForChallenge(challenge);
+    } else {
+      setStatusById((s) => ({ ...s, [challenge.id]: "wrong" }));
+    }
+  };
+
+  // WRONG TOOL — find the first hint whose trigger matches the user's query.
+  const matchingHint = useMemo(() => {
+    if (!isWrongTool || status !== "wrong" || !challenge.hints) return null;
+    return challenge.hints.find((h) => {
+      try { return h.trigger(query); } catch { return false; }
+    }) || null;
+  }, [isWrongTool, status, challenge.hints, query]);
+
+  const BADGES = {
+    transform: { icon: "⚒️", label: "Forge the Query" },
+    operation_builder: { icon: "🔧", label: "Build the Pipeline" },
+    predict: { icon: "🔮", label: "Predict the Result" },
+    wrong_tool: { icon: "⚡", label: "Find the Right Tool" },
+    diagnose: { icon: "🩺", label: "Diagnose the Bug" },
+  };
+  const badge = BADGES[challenge.type] || BADGES.transform;
 
   return (
     <div
@@ -1606,10 +2954,21 @@ export default function SqlForge() {
           80% { transform: translateX(4px); }
         }
         .sf-shake { animation: sfShake 320ms ease-in-out; }
+        @keyframes sfGemPulse {
+          0%, 100% { transform: scale(1); }
+          50%      { transform: scale(1.06); }
+        }
+        .sf-gem-pulse { animation: sfGemPulse 2s ease-in-out infinite; transform-origin: center; }
+        @keyframes sfGemPop {
+          0%   { transform: scale(1); filter: brightness(1); }
+          50%  { transform: scale(1.3); filter: brightness(1.6); }
+          100% { transform: scale(1); filter: brightness(1); }
+        }
+        .sf-gem-pop { animation: sfGemPop 400ms ease-out; transform-origin: center; }
         textarea::placeholder { color: #57534e; -webkit-text-fill-color: #57534e; }
       `}</style>
 
-      <GemBelt />
+      <GemBelt gems={gems} recentLevelUp={recentLevelUp} />
 
       <div className="flex" style={{ minHeight: "calc(100vh - 49px)" }}>
         <LayerMap
@@ -1618,6 +2977,7 @@ export default function SqlForge() {
           currentChallengeIdx={currentIdx}
           completedIds={completed}
           onSelectChallenge={goToChallenge}
+          onResetProgress={handleResetProgress}
         />
 
         <main className="flex-1 p-6 overflow-x-hidden">
@@ -1638,11 +2998,58 @@ export default function SqlForge() {
             </div>
           </div>
 
-          {/* Source + Target side by side */}
+          {/* DIAGNOSE — completely different UI: broken query + wrong/expected + radio options */}
+          {isDiagnose && (
+            <DiagnoseChallenge
+              challenge={challenge}
+              sourceColumns={sourceColumns}
+              sourceRows={sourceRows}
+              selectedId={diagnoseSelected}
+              onSelect={selectDiagnoseOption}
+              onDiagnose={handleDiagnoseSubmit}
+              status={status}
+            />
+          )}
+
+          {/* Predict — query card sits above source + builder */}
+          {isPredict && <PredictQueryCard sql={challenge.displaySql} />}
+
+          {/* Source + Target/Builder side by side — skip for DIAGNOSE (has its own layout) */}
+          {!isDiagnose && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <DataTable title="shows" columns={sourceColumns} rows={sourceRows} variant="source" />
-            <DataTable title="expected result" columns={expectedResult.columns} rows={expectedResult.rows} variant="target" />
+            <DataTable
+              title="shows"
+              columns={sourceColumns}
+              rows={sourceRows}
+              variant="source"
+              selectedRowIndices={isPredict ? builderState.rows : null}
+              onRowClick={
+                isPredict && !animating && status !== "correct"
+                  ? togglePredictSourceRow
+                  : null
+              }
+            />
+            {isPredict ? (
+              <ResultBuilder
+                sourceColumns={sourceColumns}
+                sourceRows={sourceRows}
+                builderCols={builderState.cols}
+                builderRowIdx={builderState.rows}
+                onToggleColumn={togglePredictColumn}
+                onClearColumns={clearPredictColumns}
+                onRemoveRow={removePredictRow}
+                onMoveRow={movePredictRow}
+                onClearRows={clearPredictRows}
+                onCheck={handleCheckPredict}
+                status={status}
+                feedback={predictFeedback}
+                disabled={animating || status === "correct"}
+              />
+            ) : (
+              <DataTable title="expected result" columns={expectedResult.columns} rows={expectedResult.rows} variant="target" />
+            )}
           </div>
+          )}
 
           {/* Operation Builder — only for operation_builder challenges */}
           {isOpBuilder && !isPipelineConfirmed && (
@@ -1666,36 +3073,43 @@ export default function SqlForge() {
             </div>
           )}
 
-          {/* Editor */}
-          <div className="mb-4" ref={editorAnchorRef}>
-            {editorLocked ? (
-              <div className="rounded-lg border border-dashed border-stone-800 bg-stone-950/40 p-6 text-center text-xs text-stone-500 italic">
-                Build the pipeline above first, then the SQL editor unlocks.
-              </div>
-            ) : (
-              <SqlEditor
-                value={query}
-                onChange={(v) => setQueries((q) => ({ ...q, [challenge.id]: v }))}
-                onSubmit={handleSubmit}
-                status={status}
-                errorMessage={errorByCurrent}
-                submitDisabled={animating}
-              />
-            )}
-          </div>
+          {/* Editor — hidden in predict and diagnose modes (those have their own answer surfaces) */}
+          {!isPredict && !isDiagnose && (
+            <div className="mb-4 space-y-2" ref={editorAnchorRef}>
+              {editorLocked ? (
+                <div className="rounded-lg border border-dashed border-stone-800 bg-stone-950/40 p-6 text-center text-xs text-stone-500 italic">
+                  Build the pipeline above first, then the SQL editor unlocks.
+                </div>
+              ) : (
+                <>
+                  <SqlEditor
+                    value={query}
+                    onChange={(v) => setQueries((q) => ({ ...q, [challenge.id]: v }))}
+                    onSubmit={handleSubmit}
+                    status={status}
+                    errorMessage={errorByCurrent}
+                    submitDisabled={animating}
+                  />
+                  <SyntaxShelf gems={gems} />
+                </>
+              )}
+            </div>
+          )}
 
-          {/* Skip-animations toggle */}
-          <div className="mb-3 flex justify-end">
-            <label className="inline-flex items-center gap-2 text-[11px] text-stone-400 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={skipAnimations}
-                onChange={(e) => setSkipAnimations(e.target.checked)}
-                className="accent-amber-500"
-              />
-              Skip animations
-            </label>
-          </div>
+          {/* Skip-animations toggle — hidden for diagnose (no animation flow) */}
+          {!isDiagnose && (
+            <div className="mb-3 flex justify-end">
+              <label className="inline-flex items-center gap-2 text-[11px] text-stone-400 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={skipAnimations}
+                  onChange={(e) => setSkipAnimations(e.target.checked)}
+                  className="accent-amber-500"
+                />
+                Skip animations
+              </label>
+            </div>
+          )}
 
           {/* Animation stage — visible only when we kicked one off for this submission */}
           {status === "correct" && animationParsed && animationPhase !== "idle" && (
@@ -1709,11 +3123,20 @@ export default function SqlForge() {
             </div>
           )}
 
+          {/* Wrong-tool hint — shown after a wrong submission when a trigger matches */}
+          {isWrongTool && status === "wrong" && matchingHint && (
+            <WrongToolHint message={matchingHint.message} />
+          )}
+
           {/* Feedback */}
           {status === "correct" && !animating && (
-            <WhyPanel why={challenge.why} onNext={handleNext} hasNext={hasNext} />
+            <WhyPanel
+              why={isDiagnose ? challenge.explanation : challenge.why}
+              onNext={handleNext}
+              hasNext={hasNext}
+            />
           )}
-          {status === "wrong" && (
+          {status === "wrong" && !isPredict && !isDiagnose && (
             <ResultComparison actual={actualByCurrent} expected={expectedResult} errorMessage={errorByCurrent} />
           )}
         </main>
