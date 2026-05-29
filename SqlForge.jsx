@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Lock, Check, ChevronRight, ChevronUp, ChevronDown, Play, Pickaxe, Gem, X, Plus, AlertTriangle, Wrench, Sparkles, Eraser, Lightbulb, Stethoscope } from "lucide-react";
+import { Lock, Check, ChevronRight, ChevronUp, ChevronDown, Play, Pickaxe, Gem, X, Plus, AlertTriangle, Wrench, Sparkles, Eraser, Lightbulb, Stethoscope, GraduationCap, Circle } from "lucide-react";
 
 // ============================================================
 // SEED DATA — the streaming-platform "shows" table (15 rows)
@@ -296,6 +296,121 @@ const CHALLENGES = [
     concepts: ["group", "count", "lens"],
     why: "You just computed GROUP BY + COUNT by hand — forming groups and counting rows in each. That's exactly what the database does internally.",
   },
+  {
+    id: "2.9",
+    layer: 2,
+    type: "teach_back",
+    title: "Explain the Guard",
+    description: "Articulate the difference between WHERE and HAVING in plain English.",
+    scenario: "Imagine two animations. Left: a WHERE clause filters individual rows — they fade and fall one by one. Right: a HAVING clause filters entire groups — whole grouped rows disappear at once.",
+    prompt: "A teammate writes WHERE COUNT(*) > 3 and gets an error. Explain what's wrong and what they should use instead.",
+    requiredConcepts: [
+      {
+        id: "where_timing",
+        label: "WHERE runs before GROUP BY",
+        triggers: [
+          "where runs before",
+          "where executes before",
+          "where comes before",
+          "before group",
+          "before grouping",
+          "hasn't been grouped",
+          "not grouped yet",
+          "no groups yet",
+          "groups don't exist",
+          "groups haven't",
+          "aggregate doesn't exist",
+          "aggregate isn't available",
+          "can't use aggregate in where",
+          "where can't access",
+          "execution order",
+        ],
+        hint: "Think about WHEN in the query's execution each clause runs...",
+      },
+      {
+        id: "having_purpose",
+        label: "HAVING filters groups/aggregates",
+        triggers: [
+          "having",
+          "filter group",
+          "filter the group",
+          "filters groups",
+          "after group",
+          "after grouping",
+          "use having",
+          "having clause",
+          "having instead",
+          "switch to having",
+          "replace.*having",
+          "designed for group",
+          "meant for group",
+          "works on group",
+          "operates on group",
+        ],
+        hint: "There's a specific clause designed for filtering aggregated results...",
+      },
+    ],
+    concepts: ["guard", "teacher"],
+    why: "You explained WHERE vs HAVING in your own words. If you can teach it, you own it.",
+  },
+  {
+    id: "2.10",
+    layer: 2,
+    type: "teach_back",
+    title: "Count the Difference",
+    description: "Explain why COUNT(*) and COUNT(column) can return different numbers.",
+    scenario: "On the shows table: COUNT(*) returns 15, but COUNT(finale_year) returns 12. Three rows have NULL in their finale_year column.",
+    prompt: "Why do COUNT(*) and COUNT(finale_year) return different numbers?",
+    requiredConcepts: [
+      {
+        id: "count_star",
+        label: "COUNT(*) counts all rows",
+        triggers: [
+          "count star",
+          "count(*)",
+          "count * ",
+          "count(\\*)",
+          "counts all",
+          "counts every",
+          "all rows",
+          "every row",
+          "total rows",
+          "regardless",
+          "no matter",
+        ],
+        hint: "What does the * in COUNT(*) mean — what does it count?",
+      },
+      {
+        id: "count_col_null",
+        label: "COUNT(column) skips NULL values",
+        triggers: [
+          "skip null",
+          "skips null",
+          "ignores null",
+          "ignore null",
+          "excludes null",
+          "exclude null",
+          "not null",
+          "non-null",
+          "non null",
+          "null values aren't counted",
+          "null.*not count",
+          "null.*skip",
+          "null.*ignore",
+          "null.*exclude",
+          "doesn't count null",
+          "only counts non",
+          "only count non",
+          "where.*not null",
+          "only.*has a value",
+          "only.*have value",
+        ],
+        hint: "What happens to rows where the column value is NULL?",
+      },
+    ],
+    concepts: ["count", "teacher"],
+    why: "You articulated the difference between COUNT(*) and COUNT(column). When you can explain what NULL means in aggregation, you truly understand it.",
+  },
 ];
 
 // ============================================================
@@ -388,7 +503,7 @@ const GEMS = [
   { id: "group",      name: "Group",      color: "#8b5cf6", shape: "hexagon",   concept: "GROUP BY",        layer: 2 },
   { id: "guard",      name: "Guard",      color: "#f97316", shape: "shield",    concept: "HAVING",          layer: 2 },
   { id: "count",      name: "Count",      color: "#e2e8f0", shape: "circle",    concept: "Aggregates",      layer: 2 },
-  { id: "teacher",    name: "Teacher",    color: "#fafafa", shape: "circle",    concept: "Explaining",      layer: 2 },
+  { id: "teacher",    name: "Teacher",    color: "#fafafa", shape: "circle",    concept: "Explaining" },
   { id: "bridge",     name: "Bridge",     color: "#06b6d4", shape: "bridge",    concept: "JOIN",            layer: 3 },
   { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding",  layer: 3 },
 ];
@@ -430,7 +545,7 @@ function nextGemLevel(prev, challenge) {
   if (level < 1) level = 1;
   if (challenge.type === "transform" && level < 2) level = 2;
   if ((challenge.concepts?.length || 0) >= 3 && level < 3) level = 3;
-  if ((challenge.type === "wrong_tool" || challenge.type === "diagnose" || challenge.type === "predict") && level < 4) level = 4;
+  if ((challenge.type === "wrong_tool" || challenge.type === "diagnose" || challenge.type === "predict" || challenge.type === "teach_back") && level < 4) level = 4;
   return level;
 }
 
@@ -1185,6 +1300,36 @@ function compareResults(actual, expected) {
   const eKeys = expected.rows.map((r) => rowKey(r, cols)).sort();
   for (let i = 0; i < aKeys.length; i++) if (aKeys[i] !== eKeys[i]) return false;
   return true;
+}
+
+// ============================================================
+// TEACH-BACK VALIDATION — client-side, generous trigger matching
+// ============================================================
+//
+// Each required concept lists many trigger phrases covering different ways the
+// learner might express the idea. If ANY trigger is found (case-insensitive
+// substring), the concept counts as covered. A trigger containing ".*" is
+// treated as "all parts must appear" — split on ".*" and each piece must be a
+// substring of the explanation. This is intentionally generous: TEACH-BACK is
+// about understanding, not exact wording.
+
+function matchesTrigger(text, trigger) {
+  const lower = text.toLowerCase();
+  if (trigger.includes(".*")) {
+    return trigger.split(".*").every((part) => lower.includes(part.toLowerCase()));
+  }
+  return lower.includes(trigger.toLowerCase());
+}
+
+function validateExplanation(text, requiredConcepts) {
+  const results = requiredConcepts.map((concept) => {
+    const found = concept.triggers.some((trigger) => matchesTrigger(text, trigger));
+    return { ...concept, found };
+  });
+  const correct = results.every((r) => r.found);
+  const presentConcepts = results.filter((r) => r.found);
+  const missingConcepts = results.filter((r) => !r.found);
+  return { correct, presentConcepts, missingConcepts };
 }
 
 // Order-sensitive comparison used by PREDICT challenges.
@@ -3255,6 +3400,194 @@ function DiagnoseChallenge({
 }
 
 // ============================================================
+// TEACH-BACK — scenario + prompt + explanation textarea + feedback
+// ============================================================
+//
+// The learner writes a free-form explanation; we score it client-side against
+// the challenge's requiredConcepts. The UI hides the SQL editor, source/target
+// tables, animations, and operation builder so the page reads as a thinking /
+// writing exercise — not a coding one.
+
+function TeachBackChallenge({
+  challenge,
+  explanation,
+  onChange,
+  onSubmit,
+  status,
+  validation,
+  onNext,
+  hasNext,
+  disabled,
+}) {
+  const MIN_CHARS = 20;
+  const trimmedLen = explanation.trim().length;
+  const tooShort = trimmedLen < MIN_CHARS;
+  const isCorrect = status === "correct";
+  const isPartial = status === "partial";
+  const isTooShort = status === "wrong";
+
+  const borderClass = isCorrect
+    ? "border-emerald-500/70 shadow-[0_0_0_3px_rgba(16,185,129,0.15)]"
+    : isPartial
+    ? "border-amber-500/60 shadow-[0_0_0_2px_rgba(245,158,11,0.15)]"
+    : isTooShort
+    ? "border-rose-500/70 shadow-[0_0_0_3px_rgba(244,63,94,0.15)]"
+    : "border-stone-800";
+
+  const animClass = isTooShort ? "sf-shake" : "";
+
+  return (
+    <div className="space-y-4">
+      {/* Scenario card — warm white/cream theme */}
+      <section className="rounded-lg border border-amber-200/30 bg-amber-50/5 p-4">
+        <header className="flex items-center gap-2 mb-2">
+          <GraduationCap size={16} className="text-amber-200/90" />
+          <span className="text-[10px] uppercase tracking-widest text-amber-200/80">Scenario</span>
+        </header>
+        <p className="text-sm text-stone-200 leading-relaxed whitespace-pre-line">{challenge.scenario}</p>
+      </section>
+
+      {/* Prompt — the question, slightly larger */}
+      <div className="px-1">
+        <p className="text-base font-semibold text-stone-100 leading-relaxed">{challenge.prompt}</p>
+      </div>
+
+      {/* Explanation input */}
+      <section className={`rounded-lg border-2 ${borderClass} ${animClass} bg-stone-950/80 transition-shadow overflow-hidden`}>
+        <header className="flex items-center justify-between px-3 py-2 border-b border-stone-800">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest text-stone-500">Your Explanation</span>
+            <span className="text-[11px] text-stone-600 italic">in your own words</span>
+          </div>
+          <span className="text-[11px] text-stone-500 tabular-nums">
+            {explanation.length} / ~300 chars
+          </span>
+        </header>
+        <textarea
+          value={explanation}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder="Explain in your own words..."
+          rows={5}
+          spellCheck={true}
+          className="w-full bg-transparent outline-none resize-y px-4 py-3 text-stone-100 placeholder:text-stone-600 leading-relaxed disabled:opacity-70"
+          style={{
+            fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif',
+            minHeight: "6rem",
+            caretColor: "#fbbf24",
+          }}
+        />
+        <div className="px-3 py-2 border-t border-stone-800 flex items-center justify-between gap-3">
+          <span className="text-[11px] text-stone-500 italic">
+            {tooShort
+              ? `${MIN_CHARS - trimmedLen} more character${MIN_CHARS - trimmedLen === 1 ? "" : "s"} to enable submit`
+              : ""}
+          </span>
+          <button
+            onClick={onSubmit}
+            disabled={disabled || tooShort}
+            title={tooShort ? `Need at least ${MIN_CHARS} characters` : ""}
+            className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors disabled:bg-stone-700 disabled:text-stone-500 disabled:cursor-not-allowed"
+          >
+            <GraduationCap size={12} /> Submit Explanation
+          </button>
+        </div>
+      </section>
+
+      {/* Too-short feedback */}
+      {isTooShort && (
+        <section className="rounded-lg border border-rose-500/40 bg-rose-950/20 p-3 text-sm text-rose-200">
+          Your explanation is too short to cover the concepts. Try writing 2-3 sentences.
+        </section>
+      )}
+
+      {/* Partial feedback — found some, missed others. Learner can edit + resubmit. */}
+      {isPartial && validation && (
+        <section className="rounded-lg border border-amber-500/40 bg-amber-950/20 p-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-500/20 text-amber-300 shrink-0 mt-0.5">
+              <Lightbulb size={16} />
+            </span>
+            <div className="flex-1 space-y-3">
+              <div className="text-amber-300 text-sm font-semibold">
+                Almost there — you covered some key ideas but missed others.
+              </div>
+              {validation.presentConcepts.length > 0 && (
+                <div className="space-y-1.5">
+                  {validation.presentConcepts.map((c) => (
+                    <div key={c.id} className="flex items-center gap-2 text-sm text-emerald-200">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 shrink-0">
+                        <Check size={12} />
+                      </span>
+                      <span>{c.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {validation.missingConcepts.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  {validation.missingConcepts.map((c) => (
+                    <div key={c.id} className="space-y-1">
+                      <div className="flex items-center gap-2 text-sm text-amber-100">
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border-2 border-amber-400/70 text-amber-300 shrink-0">
+                          <Circle size={6} className="fill-current" />
+                        </span>
+                        <span className="font-medium">{c.label}</span>
+                      </div>
+                      {c.hint && (
+                        <div className="ml-7 text-xs text-stone-400 italic leading-relaxed">{c.hint}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Success panel — concept checks + why + Next */}
+      {isCorrect && validation && (
+        <section className="rounded-lg border border-emerald-500/40 bg-emerald-950/20 p-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-300 shrink-0 mt-0.5">
+              <Check size={16} />
+            </span>
+            <div className="flex-1 space-y-3">
+              <div className="text-emerald-300 text-sm font-semibold">You nailed it.</div>
+              <div className="space-y-1.5">
+                {validation.presentConcepts.map((c) => (
+                  <div key={c.id} className="flex items-center gap-2 text-sm text-emerald-200">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 shrink-0">
+                      <Check size={12} />
+                    </span>
+                    <span>{c.label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-stone-200 text-sm leading-relaxed pt-1">{challenge.why}</div>
+            </div>
+            {hasNext && (
+              <button
+                onClick={onNext}
+                className="inline-flex items-center gap-1 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors shrink-0"
+              >
+                Next Challenge <ChevronRight size={14} />
+              </button>
+            )}
+            {!hasNext && (
+              <div className="text-[11px] text-stone-400 italic shrink-0">
+                End of seeded content — more veins ahead.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // PERSISTENCE — window.storage. Guarded so artifacts without it still run.
 // ============================================================
 
@@ -3358,6 +3691,14 @@ export default function SqlForge() {
     Object.fromEntries(CHALLENGES.filter((c) => c.type === "diagnose").map((c) => [c.id, null]))
   );
 
+  // TEACH-BACK state — per-challenge explanation text + most recent validation
+  // result. statusById carries "correct" on full match and "wrong" on too-short;
+  // the partial state is derived from teachBackResults existing but not correct.
+  const [teachBackTexts, setTeachBackTexts] = useState(() =>
+    Object.fromEntries(CHALLENGES.filter((c) => c.type === "teach_back").map((c) => [c.id, ""]))
+  );
+  const [teachBackResults, setTeachBackResults] = useState({}); // id -> { correct, presentConcepts, missingConcepts }
+
   // Animation orchestration: phase is reported up by AnimationStage as it runs.
   // 'idle' before/after any animation; sub-phases while running; 'complete' at the end.
   const [animationPhase, setAnimationPhase] = useState("idle");
@@ -3383,6 +3724,7 @@ export default function SqlForge() {
   const isPredict = challenge.type === "predict";
   const isWrongTool = challenge.type === "wrong_tool";
   const isDiagnose = challenge.type === "diagnose";
+  const isTeachBack = challenge.type === "teach_back";
   const pipeline = pipelines[challenge.id] || [];
   const pipelineFilled = pipeline.filter(Boolean);
   const pipelineValidation = useMemo(() => validatePipeline(pipelineFilled), [pipelineFilled]);
@@ -3462,6 +3804,8 @@ export default function SqlForge() {
     setPipelineConfirmed({});
     setPredictBuilders(Object.fromEntries(CHALLENGES.map((c) => [c.id, { cols: [], rows: [], typedValues: [] }])));
     setDiagnoseSelections(Object.fromEntries(CHALLENGES.filter((c) => c.type === "diagnose").map((c) => [c.id, null])));
+    setTeachBackTexts(Object.fromEntries(CHALLENGES.filter((c) => c.type === "teach_back").map((c) => [c.id, ""])));
+    setTeachBackResults({});
     setQueries(Object.fromEntries(CHALLENGES.map((c) => [c.id, ""])));
     setPipelines(Object.fromEntries(CHALLENGES.map((c) => [c.id, []])));
   };
@@ -3689,6 +4033,65 @@ export default function SqlForge() {
     }
   };
 
+  // TEACH-BACK handlers
+  const teachBackText = isTeachBack ? (teachBackTexts[challenge.id] || "") : "";
+  const teachBackResult = isTeachBack ? (teachBackResults[challenge.id] || null) : null;
+  // Derive the teach-back UI status from statusById + the validation result.
+  // "correct" — all required concepts found
+  // "wrong"   — submitted too-short (under 20 chars after trimming)
+  // "partial" — submitted, some concepts missing, can revise and resubmit
+  // "idle"    — not submitted yet (or text was edited after a partial result)
+  let teachBackStatus = "idle";
+  if (isTeachBack) {
+    if (status === "correct") teachBackStatus = "correct";
+    else if (status === "wrong") teachBackStatus = "wrong";
+    else if (teachBackResult && !teachBackResult.correct) teachBackStatus = "partial";
+  }
+
+  const setTeachBackText = (text) => {
+    setTeachBackTexts((t) => ({ ...t, [challenge.id]: text }));
+    // Clear stale "wrong" (too-short) status as soon as the learner edits, so the
+    // shake border doesn't linger. Partial results stay visible — the learner can
+    // see what they still need to cover while they revise.
+    if (statusById[challenge.id] === "wrong") {
+      setStatusById((s) => {
+        const copy = { ...s };
+        delete copy[challenge.id];
+        return copy;
+      });
+    }
+  };
+
+  const handleTeachBackSubmit = () => {
+    if (animating) return;
+    const trimmedLen = teachBackText.trim().length;
+    if (trimmedLen < 20) {
+      setStatusById((s) => ({ ...s, [challenge.id]: "wrong" }));
+      // Clear any prior validation so the partial panel doesn't render alongside
+      // the too-short shake.
+      setTeachBackResults((r) => {
+        const copy = { ...r };
+        delete copy[challenge.id];
+        return copy;
+      });
+      return;
+    }
+    const result = validateExplanation(teachBackText, challenge.requiredConcepts);
+    setTeachBackResults((r) => ({ ...r, [challenge.id]: result }));
+    if (result.correct) {
+      setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
+      setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
+      earnGemsForChallenge(challenge);
+    } else {
+      // Partial — don't mark complete. Clear any stale "wrong" so the shake fades.
+      setStatusById((s) => {
+        const copy = { ...s };
+        delete copy[challenge.id];
+        return copy;
+      });
+    }
+  };
+
   // WRONG TOOL — find the first hint whose trigger matches the user's query.
   const matchingHint = useMemo(() => {
     if (!isWrongTool || status !== "wrong" || !challenge.hints) return null;
@@ -3703,6 +4106,7 @@ export default function SqlForge() {
     predict: { icon: "🔮", label: "Predict the Result" },
     wrong_tool: { icon: "⚡", label: "Find the Right Tool" },
     diagnose: { icon: "🩺", label: "Diagnose the Bug" },
+    teach_back: { icon: "🎓", label: "Explain It" },
   };
   const badge = BADGES[challenge.type] || BADGES.transform;
 
@@ -3793,11 +4197,26 @@ export default function SqlForge() {
             />
           )}
 
+          {/* TEACH-BACK — scenario + prompt + textarea, no SQL surfaces */}
+          {isTeachBack && (
+            <TeachBackChallenge
+              challenge={challenge}
+              explanation={teachBackText}
+              onChange={setTeachBackText}
+              onSubmit={handleTeachBackSubmit}
+              status={teachBackStatus}
+              validation={teachBackResult}
+              onNext={handleNext}
+              hasNext={hasNext}
+              disabled={teachBackStatus === "correct"}
+            />
+          )}
+
           {/* Predict — query card sits above source + builder */}
           {isPredict && <PredictQueryCard sql={challenge.displaySql} />}
 
-          {/* Source + Target/Builder side by side — skip for DIAGNOSE (has its own layout) */}
-          {!isDiagnose && (
+          {/* Source + Target/Builder side by side — skip for DIAGNOSE and TEACH-BACK (each has its own layout) */}
+          {!isDiagnose && !isTeachBack && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
             <DataTable
               title="shows"
@@ -3858,8 +4277,8 @@ export default function SqlForge() {
             </div>
           )}
 
-          {/* Editor — hidden in predict and diagnose modes (those have their own answer surfaces) */}
-          {!isPredict && !isDiagnose && (
+          {/* Editor — hidden in predict, diagnose, and teach-back modes (each has its own answer surface) */}
+          {!isPredict && !isDiagnose && !isTeachBack && (
             <div className="mb-4 space-y-2" ref={editorAnchorRef}>
               {editorLocked ? (
                 <div className="rounded-lg border border-dashed border-stone-800 bg-stone-950/40 p-6 text-center text-xs text-stone-500 italic">
@@ -3881,8 +4300,8 @@ export default function SqlForge() {
             </div>
           )}
 
-          {/* Skip-animations toggle — hidden for diagnose (no animation flow) */}
-          {!isDiagnose && (
+          {/* Skip-animations toggle — hidden for diagnose and teach-back (neither runs animations) */}
+          {!isDiagnose && !isTeachBack && (
             <div className="mb-3 flex justify-end">
               <label className="inline-flex items-center gap-2 text-[11px] text-stone-400 cursor-pointer select-none">
                 <input
@@ -3914,15 +4333,15 @@ export default function SqlForge() {
             <WrongToolHint message={matchingHint.message} />
           )}
 
-          {/* Feedback */}
-          {status === "correct" && !animating && (
+          {/* Feedback — teach-back renders its own success panel inside the component */}
+          {status === "correct" && !animating && !isTeachBack && (
             <WhyPanel
               why={isDiagnose ? challenge.explanation : challenge.why}
               onNext={handleNext}
               hasNext={hasNext}
             />
           )}
-          {status === "wrong" && !isPredict && !isDiagnose && (
+          {status === "wrong" && !isPredict && !isDiagnose && !isTeachBack && (
             <ResultComparison actual={actualByCurrent} expected={expectedResult} errorMessage={errorByCurrent} />
           )}
         </main>
