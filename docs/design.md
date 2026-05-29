@@ -2,7 +2,7 @@
 
 ## Build a gamified, visual, interactive learning app called "SQL Forge" that teaches SQL from basic to advanced through visual problem-solving, conceptual reasoning, and deep internalization — not memorization.
 
-**Tech:** React (single JSX file), Tailwind CSS, CSS animations (no heavy libraries). No localStorage — use `useState`/`useReducer` for session state, `window.storage` for persistence across sessions.
+**Tech:** Vite + React 18, Tailwind CSS v3, CSS animations (no heavy libraries). `localStorage` for persistence across sessions. Deployed on Vercel.
 
 ---
 
@@ -925,7 +925,7 @@ Each challenge type has a small badge/label so the learner knows what's expected
 
 ---
 
-## Persistent Storage (window.storage)
+## Persistent Storage (localStorage)
 
 Single key `sql-forge-state`:
 
@@ -964,6 +964,27 @@ Single key `sql-forge-state`:
   "syntaxShelfLevel": {
     "filter": "keyword_only",
     "group": "full_template"
+  }
+}
+```
+
+Save/load pattern:
+```javascript
+function saveState(state) {
+  try {
+    localStorage.setItem('sql-forge-state', JSON.stringify(state));
+  } catch (e) {
+    console.error('Save failed:', e);
+  }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem('sql-forge-state');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.error('Load failed:', e);
+    return null;
   }
 }
 ```
