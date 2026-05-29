@@ -23,7 +23,11 @@ const SHOWS_DATA = [
   { id: 15, name: "Lost",             genre: "Mystery", imdb_rating: 8.3, certificate: "PG-13", premiere_year: 2004, finale_year: 2010, episode_count: 121, overview: "Plane crash survivors uncover the mysteries of a strange island." },
 ];
 
-const TABLES = { shows: SHOWS_DATA };
+// Layer 3 will populate this — we keep it declared now so the shape of TABLES
+// stays stable when new layers add joinable data.
+const EPISODES_DATA = [];
+
+const TABLES = { shows: SHOWS_DATA, episodes: EPISODES_DATA };
 
 const SHOW_COLUMN_ORDER = ["id", "name", "genre", "imdb_rating", "certificate", "premiere_year", "finale_year", "episode_count", "overview"];
 
@@ -197,6 +201,101 @@ const CHALLENGES = [
     concepts: ["filter", "select", "sort", "compass"],
     why: "You combined every Layer 1 concept into one query: WHERE with IS NULL and AND, SELECT specific columns, multi-column ORDER BY, and LIMIT. The Surface is forged.",
   },
+
+  // ────────────────────────────────────────────────────────────────
+  // LAYER 2 — Upper Mine: aggregate and group
+  // ────────────────────────────────────────────────────────────────
+  {
+    id: "2.1",
+    layer: 2,
+    type: "transform",
+    title: "Count the Vein",
+    description: "How many shows are in the table? One number.",
+    targetSql: "SELECT COUNT(*) AS total_shows FROM shows",
+    concepts: ["count"],
+    why: "COUNT(*) counts all rows. The entire table compressed into a single number — that's aggregation.",
+  },
+  {
+    id: "2.2",
+    layer: 2,
+    type: "transform",
+    title: "Two Numbers",
+    description: "Find the lowest and highest IMDB rating across all shows.",
+    targetSql: "SELECT MIN(imdb_rating) AS lowest, MAX(imdb_rating) AS highest FROM shows",
+    concepts: ["count"],
+    why: "MIN and MAX scan the entire column and return the extremes. Two numbers that summarize 15 rows.",
+  },
+  {
+    id: "2.3",
+    layer: 2,
+    type: "transform",
+    title: "The Average",
+    description: "What's the average IMDB rating across all shows? Round to 1 decimal.",
+    targetSql: "SELECT ROUND(AVG(imdb_rating), 1) AS avg_rating FROM shows",
+    concepts: ["count"],
+    why: "AVG sums all values and divides by count. ROUND cleans up the decimals. One number that represents the center.",
+  },
+  {
+    id: "2.4",
+    layer: 2,
+    type: "operation_builder",
+    title: "Split the Vein",
+    description: "Build the pipeline, then write the SQL. How many shows belong to each certificate rating?",
+    expectedPipeline: ["select", "group"],
+    targetSql: "SELECT certificate, COUNT(*) AS show_count FROM shows GROUP BY certificate",
+    concepts: ["group", "count", "compass"],
+    why: "GROUP BY collapses rows with matching values into one row per group. COUNT then runs WITHIN each group. You built this pipeline with your hands — grouping before counting.",
+  },
+  {
+    id: "2.5",
+    layer: 2,
+    type: "transform",
+    title: "Group and Measure",
+    description: "For each certificate, show the count, average rating (rounded to 2 decimals), min rating, and max rating.",
+    targetSql: "SELECT certificate, COUNT(*) AS show_count, ROUND(AVG(imdb_rating), 2) AS avg_rating, MIN(imdb_rating) AS worst, MAX(imdb_rating) AS best FROM shows GROUP BY certificate",
+    concepts: ["group", "count"],
+    why: "Multiple aggregates in one GROUP BY — each runs independently per group. One query, four insights per certificate.",
+  },
+  {
+    id: "2.6",
+    layer: 2,
+    type: "transform",
+    title: "Guard the Groups",
+    description: "Show certificate stats, but only for certificates that have more than 2 shows.",
+    targetSql: "SELECT certificate, COUNT(*) AS show_count, ROUND(AVG(imdb_rating), 2) AS avg_rating FROM shows GROUP BY certificate HAVING COUNT(*) > 2",
+    concepts: ["group", "count", "guard"],
+    why: "HAVING filters groups, WHERE filters rows. You just saw groups disappear — the ones too small to matter.",
+  },
+  {
+    id: "2.7",
+    layer: 2,
+    type: "diagnose",
+    title: "Where vs Having",
+    description: "This query has a bug. Find the conceptual error.",
+    brokenSql: "SELECT certificate, COUNT(*) AS cnt FROM shows WHERE cnt > 2 GROUP BY certificate",
+    targetSql: "SELECT certificate, COUNT(*) AS cnt FROM shows GROUP BY certificate HAVING COUNT(*) > 2",
+    options: [
+      { id: "a", text: "The alias 'cnt' doesn't exist when WHERE runs — WHERE executes before GROUP BY and SELECT." },
+      { id: "b", text: "COUNT(*) can't be used together with GROUP BY." },
+      { id: "c", text: "WHERE filters individual rows, but this condition needs to filter groups — that's HAVING's job." },
+      { id: "d", text: "Both A and C describe the same underlying issue — execution order means WHERE can't access aggregates." },
+    ],
+    correctOption: "d",
+    explanation: "SQL execution order: FROM → WHERE → GROUP BY → HAVING → SELECT. WHERE runs before GROUP BY, so (A) the alias doesn't exist yet, and (C) you can't filter on aggregated results. HAVING exists specifically to filter groups after they've been formed.",
+    concepts: ["guard", "anvil"],
+    why: "You just diagnosed the most common SQL mistake. WHERE vs HAVING isn't a rule to memorize — it's a consequence of execution order.",
+  },
+  {
+    id: "2.8",
+    layer: 2,
+    type: "predict",
+    title: "Hand Compute",
+    description: "Read this query and build the result by hand. You'll need to count the rows in each group yourself.",
+    displaySql: "SELECT certificate, COUNT(*) AS cnt FROM shows GROUP BY certificate ORDER BY cnt DESC",
+    targetSql: "SELECT certificate, COUNT(*) AS cnt FROM shows GROUP BY certificate ORDER BY cnt DESC",
+    concepts: ["group", "count", "lens"],
+    why: "You just computed GROUP BY + COUNT by hand — forming groups and counting rows in each. That's exactly what the database does internally.",
+  },
 ];
 
 // ============================================================
@@ -215,10 +314,10 @@ const OPERATIONS = {
 };
 
 const OPERATIONS_LIST = ["filter", "select", "sort", "limit", "group", "having", "join", "window"];
-const UNLOCKED_THROUGH_LAYER = 1;
+const UNLOCKED_THROUGH_LAYER = 2;
 
 // Canonical SQL execution order rank — lower = earlier.
-const CANONICAL_RANK = { filter: 0, select: 1, sort: 2, limit: 3 };
+const CANONICAL_RANK = { filter: 0, group: 1, having: 2, select: 3, sort: 4, limit: 5 };
 
 function validatePipeline(ops) {
   const seen = new Set();
@@ -267,7 +366,7 @@ function pipelineMatchesExpected(ops, expected) {
 
 const LAYERS = [
   { num: 1, name: "The Surface",    subtitle: "See and Filter",         unlocked: true  },
-  { num: 2, name: "Upper Mine",     subtitle: "Aggregate and Group",    unlocked: false },
+  { num: 2, name: "Upper Mine",     subtitle: "Aggregate and Group",    unlocked: true  },
   { num: 3, name: "The Crossroads", subtitle: "Joining Tables",         unlocked: false },
   { num: 4, name: "Deep Shafts",    subtitle: "Subqueries and Sets",    unlocked: false },
   { num: 5, name: "The Core",       subtitle: "Windows, CTEs, Mastery", unlocked: false },
@@ -312,6 +411,12 @@ const SYNTAX_TEMPLATES = [
   { id: "select_dist",  gemId: "select", keyword: "SELECT DISTINCT",  template: "SELECT DISTINCT <column> FROM <table>" },
   { id: "sort_order",   gemId: "sort",   keyword: "ORDER BY",         template: "ORDER BY <column> ASC|DESC" },
   { id: "sort_limit",   gemId: "sort",   keyword: "LIMIT",            template: "LIMIT <number>" },
+  { id: "group_by",     gemId: "group",  keyword: "GROUP BY",         template: "GROUP BY <column>" },
+  { id: "having",       gemId: "guard",  keyword: "HAVING",           template: "HAVING <aggregate> <op> <value>" },
+  { id: "count",        gemId: "count",  keyword: "COUNT",            template: "COUNT(*) | COUNT(<column>)" },
+  { id: "sum_avg",      gemId: "count",  keyword: "AVG / SUM",        template: "AVG(<column>) | SUM(<column>)" },
+  { id: "min_max",      gemId: "count",  keyword: "MIN / MAX",        template: "MIN(<column>) | MAX(<column>)" },
+  { id: "round",        gemId: "count",  keyword: "ROUND",            template: "ROUND(<value>, <decimals>)" },
 ];
 
 // Brightness rules: walk every concept on the challenge and ratchet the gem up.
@@ -377,6 +482,66 @@ function tokenize(sql) {
   return tokens;
 }
 
+const AGG_FUNCS = new Set(["count", "sum", "avg", "min", "max"]);
+
+function exprHasAgg(expr) {
+  if (!expr) return false;
+  if (expr.type === "agg") return true;
+  if (expr.type === "func") return expr.args.some(exprHasAgg);
+  if (expr.type === "case") {
+    return expr.branches.some((b) => exprHasAgg(b.then)) || (expr.else && exprHasAgg(expr.else));
+  }
+  return false;
+}
+
+function exprDefaultName(expr) {
+  if (expr.type === "col") return expr.name;
+  if (expr.type === "agg") {
+    const argName = expr.arg.type === "star" ? "*" : expr.arg.name;
+    return `${expr.func}(${argName})`;
+  }
+  if (expr.type === "func") return `${expr.name}(...)`;
+  if (expr.type === "case") return "case";
+  if (expr.type === "literal") return String(expr.value);
+  return "expr";
+}
+
+function collectWhereColumns(expr) {
+  const cols = new Set();
+  function walk(e) {
+    if (!e) return;
+    switch (e.type) {
+      case "and":
+      case "or":
+        walk(e.left); walk(e.right); break;
+      case "not":
+        walk(e.expr); break;
+      case "compare":
+      case "is_null":
+      case "like":
+      case "in":
+      case "not_in":
+      case "between":
+        cols.add(e.column); break;
+    }
+  }
+  walk(expr);
+  return cols;
+}
+
+function exprValidInAggregateSelect(expr, groupSet) {
+  if (!expr) return true;
+  if (expr.type === "agg") return true;
+  if (expr.type === "literal") return true;
+  if (expr.type === "col") return groupSet.has(expr.name);
+  if (expr.type === "func") return expr.args.every((a) => exprValidInAggregateSelect(a, groupSet));
+  if (expr.type === "case") {
+    return expr.branches.every((b) => exprValidInAggregateSelect(b.then, groupSet))
+      && (!expr.else || exprValidInAggregateSelect(expr.else, groupSet));
+  }
+  return false;
+}
+
 function parseQuery(sql) {
   const tokens = tokenize(sql);
   let pos = 0;
@@ -396,29 +561,109 @@ function parseQuery(sql) {
     return !!(t && t.type === "ident" && t.value === kw);
   };
 
+  // ----- expressions that yield a value (column refs, literals, function calls, CASE) -----
+  function parseValueExpr() {
+    const t = peek();
+    if (!t) throw new Error("Expected expression");
+
+    if (t.type === "number" || t.type === "string") {
+      consume();
+      return { type: "literal", value: t.value };
+    }
+
+    if (t.type === "ident") {
+      // CASE WHEN ... [WHEN ...]* [ELSE ...] END
+      if (t.value === "case") {
+        consume();
+        const branches = [];
+        while (isKw("when")) {
+          consume();
+          const cond = parseOr();
+          if (!isKw("then")) throw new Error("Expected THEN after WHEN");
+          consume();
+          const thenVal = parseValueExpr();
+          branches.push({ when: cond, then: thenVal });
+        }
+        if (branches.length === 0) throw new Error("CASE requires at least one WHEN clause");
+        let elseExpr = null;
+        if (isKw("else")) {
+          consume();
+          elseExpr = parseValueExpr();
+        }
+        if (!isKw("end")) throw new Error("Expected END to close CASE");
+        consume();
+        return { type: "case", branches, else: elseExpr };
+      }
+
+      // Function call vs plain column ref
+      const next = peek(1);
+      if (next && next.type === "lparen") {
+        const fname = t.value;
+        consume(); // ident
+        consume(); // lparen
+
+        if (AGG_FUNCS.has(fname)) {
+          let arg;
+          const argT = peek();
+          if (argT && argT.type === "star") {
+            consume();
+            arg = { type: "star" };
+          } else if (argT && argT.type === "ident") {
+            consume();
+            arg = { type: "col", name: argT.value };
+          } else {
+            throw new Error(`Expected column or * in ${fname.toUpperCase()}(...)`);
+          }
+          if (!peek() || peek().type !== "rparen") throw new Error(`Expected ) after ${fname.toUpperCase()}(...)`);
+          consume();
+          return { type: "agg", func: fname, arg };
+        }
+
+        if (fname === "round") {
+          const inner = parseValueExpr();
+          if (!peek() || peek().type !== "comma") throw new Error("ROUND expects (value, decimals)");
+          consume();
+          const decT = peek();
+          if (!decT || decT.type !== "number") throw new Error("ROUND decimals must be a number");
+          consume();
+          if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after ROUND(...)");
+          consume();
+          return { type: "func", name: "round", args: [inner, { type: "literal", value: decT.value }] };
+        }
+
+        throw new Error(`Unknown function: ${t.raw || t.value}`);
+      }
+
+      // Plain column ref
+      consume();
+      return { type: "col", name: t.value };
+    }
+
+    throw new Error(`Unexpected token in expression: ${t.raw || t.value || t.type}`);
+  }
+
   expectKeyword("select");
 
   let distinct = false;
   if (isKw("distinct")) { consume(); distinct = true; }
 
-  const columns = [];
-  const aliases = {};
+  const selectItems = [];
+  let isStar = false;
   if (peek() && peek().type === "star") {
     consume();
-    columns.push("*");
+    isStar = true;
   } else {
     while (true) {
-      const t = peek();
-      if (!t || t.type !== "ident") throw new Error("Expected column name");
-      const colName = consume().value;
-      columns.push(colName);
+      const expr = parseValueExpr();
+      let alias = null;
       if (isKw("as")) {
         consume();
         const aliasTok = peek();
         if (!aliasTok || aliasTok.type !== "ident") throw new Error("Expected alias after AS");
         consume();
-        aliases[colName] = aliasTok.value;
+        alias = aliasTok.value;
       }
+      selectItems.push({ expr, alias, outName: alias || exprDefaultName(expr) });
       if (peek() && peek().type === "comma") { consume(); continue; }
       break;
     }
@@ -433,6 +678,28 @@ function parseQuery(sql) {
   if (isKw("where")) {
     consume();
     where = parseOr();
+  }
+
+  let groupBy = null;
+  if (isKw("group")) {
+    consume();
+    if (!isKw("by")) throw new Error("Expected BY after GROUP");
+    consume();
+    groupBy = [];
+    while (true) {
+      const colTok = peek();
+      if (!colTok || colTok.type !== "ident") throw new Error("Expected column name in GROUP BY");
+      consume();
+      groupBy.push(colTok.value);
+      if (peek() && peek().type === "comma") { consume(); continue; }
+      break;
+    }
+  }
+
+  let having = null;
+  if (isKw("having")) {
+    consume();
+    having = parseHavingOr();
   }
 
   let orderBy = null;
@@ -466,6 +733,7 @@ function parseQuery(sql) {
 
   if (peek()) throw new Error(`Unexpected token after query: ${peek().raw || peek().value || peek().type}`);
 
+  // ----- WHERE boolean expression -----
   function parseOr() {
     let left = parseAnd();
     while (peek() && peek().type === "ident" && peek().value === "or") {
@@ -551,8 +819,6 @@ function parseQuery(sql) {
       consume();
       const right = consume();
       if (!right) throw new Error("Expected literal on right side of comparison");
-      // Allow NULL as the RHS so `col = NULL` parses (and silently matches nothing,
-      // mirroring real SQL semantics). The WRONG TOOL "= NULL" trap relies on this.
       if (right.type === "ident" && right.value === "null") {
         return { type: "compare", column: col, op: next.value, value: null };
       }
@@ -562,7 +828,74 @@ function parseQuery(sql) {
     throw new Error(`Unexpected token in condition: ${next.raw || next.value || next.type}`);
   }
 
-  return { columns, aliases, table, where, orderBy, limit, distinct };
+  // ----- HAVING boolean expression: left side must be an aggregate value expr -----
+  function parseHavingOr() {
+    let left = parseHavingAnd();
+    while (isKw("or")) { consume(); const right = parseHavingAnd(); left = { type: "or", left, right }; }
+    return left;
+  }
+  function parseHavingAnd() {
+    let left = parseHavingNot();
+    while (isKw("and")) { consume(); const right = parseHavingNot(); left = { type: "and", left, right }; }
+    return left;
+  }
+  function parseHavingNot() {
+    if (isKw("not")) { consume(); return { type: "not", expr: parseHavingCondition() }; }
+    return parseHavingCondition();
+  }
+  function parseHavingCondition() {
+    if (peek() && peek().type === "lparen") {
+      consume();
+      const expr = parseHavingOr();
+      if (!peek() || peek().type !== "rparen") throw new Error("Expected )");
+      consume();
+      return expr;
+    }
+    const left = parseValueExpr();
+    if (!exprHasAgg(left)) {
+      throw new Error("HAVING requires an aggregate expression (COUNT, SUM, AVG, MIN, MAX, or ROUND(...))");
+    }
+    const opTok = peek();
+    if (!opTok || opTok.type !== "op") throw new Error("Expected comparison operator in HAVING");
+    consume();
+    const right = peek();
+    if (!right || (right.type !== "number" && right.type !== "string")) {
+      throw new Error("HAVING expects a literal on the right side");
+    }
+    consume();
+    return { type: "compare_expr", left, op: opTok.value, value: right.value };
+  }
+
+  // ----- back-compat: when the query is fully simple (column refs only), produce
+  //       the legacy `columns` / `aliases` shape so the existing animation path
+  //       and tests keep working unchanged. Aggregate / starless paths use selectItems.
+  const isAggregate = (groupBy && groupBy.length > 0) || selectItems.some((it) => exprHasAgg(it.expr));
+
+  let legacyColumns;
+  const legacyAliases = {};
+  if (isStar) {
+    legacyColumns = ["*"];
+  } else if (!isAggregate && selectItems.every((it) => it.expr.type === "col")) {
+    legacyColumns = selectItems.map((it) => it.expr.name);
+    for (const it of selectItems) if (it.alias) legacyAliases[it.expr.name] = it.alias;
+  } else {
+    legacyColumns = selectItems.map((it) => it.outName);
+  }
+
+  return {
+    columns: legacyColumns,
+    aliases: legacyAliases,
+    selectItems,
+    isStar,
+    isAggregate,
+    table,
+    where,
+    groupBy,
+    having,
+    orderBy,
+    limit,
+    distinct,
+  };
 }
 
 function sortRowsBy(rows, orderBy) {
@@ -622,35 +955,189 @@ function evalExpr(expr, row) {
   }
 }
 
+// Evaluate a value-yielding expression against a single row (no aggregates).
+function evalValueExpr(expr, row) {
+  switch (expr.type) {
+    case "literal": return expr.value;
+    case "col":     return row[expr.name];
+    case "func":
+      if (expr.name === "round") {
+        const v = evalValueExpr(expr.args[0], row);
+        const d = evalValueExpr(expr.args[1], row);
+        if (v == null) return null;
+        return Number(Number(v).toFixed(d));
+      }
+      throw new Error(`Unknown function: ${expr.name}`);
+    case "case":
+      for (const b of expr.branches) {
+        if (evalExpr(b.when, row)) return evalValueExpr(b.then, row);
+      }
+      return expr.else ? evalValueExpr(expr.else, row) : null;
+    default:
+      throw new Error(`Cannot evaluate expression of type ${expr.type}`);
+  }
+}
+
+// Evaluate an expression (possibly containing aggregates) over a group of rows.
+function evalAggOnGroup(expr, groupRows) {
+  switch (expr.type) {
+    case "literal": return expr.value;
+    case "col":
+      // Bare column ref in an aggregate SELECT must be a GROUP BY key —
+      // every row in the group has the same value, so read from the first.
+      return groupRows.length > 0 ? groupRows[0][expr.name] : null;
+    case "agg": {
+      const f = expr.func;
+      if (f === "count") {
+        if (expr.arg.type === "star") return groupRows.length;
+        return groupRows.filter((r) => r[expr.arg.name] != null).length;
+      }
+      const colName = expr.arg.name;
+      const vals = groupRows.map((r) => r[colName]).filter((v) => v != null);
+      if (vals.length === 0) return null;
+      if (f === "sum") return vals.reduce((a, b) => a + b, 0);
+      if (f === "avg") return vals.reduce((a, b) => a + b, 0) / vals.length;
+      if (f === "min") return vals.reduce((a, b) => (b < a ? b : a));
+      if (f === "max") return vals.reduce((a, b) => (b > a ? b : a));
+      throw new Error(`Unknown aggregate: ${f}`);
+    }
+    case "func":
+      if (expr.name === "round") {
+        const v = evalAggOnGroup(expr.args[0], groupRows);
+        const d = evalAggOnGroup(expr.args[1], groupRows);
+        if (v == null) return null;
+        return Number(Number(v).toFixed(d));
+      }
+      throw new Error(`Unknown function: ${expr.name}`);
+    case "case":
+      for (const b of expr.branches) {
+        // Per-group: evaluate the WHEN against the first row of the group.
+        if (groupRows.length > 0 && evalExpr(b.when, groupRows[0])) {
+          return evalAggOnGroup(b.then, groupRows);
+        }
+      }
+      return expr.else ? evalAggOnGroup(expr.else, groupRows) : null;
+    default:
+      throw new Error(`Cannot evaluate aggregate expression of type ${expr.type}`);
+  }
+}
+
+function evalHaving(expr, groupRows) {
+  switch (expr.type) {
+    case "and": return evalHaving(expr.left, groupRows) && evalHaving(expr.right, groupRows);
+    case "or":  return evalHaving(expr.left, groupRows) || evalHaving(expr.right, groupRows);
+    case "not": return !evalHaving(expr.expr, groupRows);
+    case "compare_expr": {
+      const v = evalAggOnGroup(expr.left, groupRows);
+      if (v == null) return false;
+      switch (expr.op) {
+        case "=":  return v === expr.value;
+        case "!=": return v !== expr.value;
+        case ">":  return v >  expr.value;
+        case "<":  return v <  expr.value;
+        case ">=": return v >= expr.value;
+        case "<=": return v <= expr.value;
+        default: return false;
+      }
+    }
+    default: return false;
+  }
+}
+
 function executeQuery(sql, tables) {
   const parsed = parseQuery(sql);
   const source = tables[parsed.table];
   if (!source) throw new Error(`Unknown table: ${parsed.table}`);
 
+  // Validate WHERE column refs against the source schema so a broken query like
+  // `WHERE cnt > 2` (where cnt is a SELECT alias) errors instead of silently
+  // returning zero rows. This is what challenge 2.7 (WHERE vs HAVING) relies on.
+  if (parsed.where && source.length) {
+    for (const c of collectWhereColumns(parsed.where)) {
+      if (!(c in source[0])) throw new Error(`Unknown column in WHERE: ${c}`);
+    }
+  }
+
   let rows = source;
   if (parsed.where) rows = rows.filter((row) => evalExpr(parsed.where, row));
 
-  let srcCols;
-  if (parsed.columns.length === 1 && parsed.columns[0] === "*") {
-    srcCols = source.length ? Object.keys(source[0]) : [];
-  } else {
-    for (const c of parsed.columns) {
-      if (source.length && !(c in source[0])) throw new Error(`Unknown column: ${c}`);
+  // ---------- Aggregate / GROUP BY path ----------
+  if (parsed.isAggregate) {
+    if (parsed.groupBy) {
+      for (const c of parsed.groupBy) {
+        if (source.length && !(c in source[0])) throw new Error(`Unknown column in GROUP BY: ${c}`);
+      }
     }
-    srcCols = parsed.columns;
+    const groupSet = new Set(parsed.groupBy || []);
+    for (const it of parsed.selectItems) {
+      if (!exprValidInAggregateSelect(it.expr, groupSet)) {
+        const badName = it.expr.type === "col" ? it.expr.name : exprDefaultName(it.expr);
+        throw new Error(`SELECT item "${badName}" must be aggregated or appear in GROUP BY`);
+      }
+    }
+
+    // Form groups. With no GROUP BY but aggregates present, all rows form one group.
+    let groups;
+    if (parsed.groupBy && parsed.groupBy.length) {
+      const m = new Map();
+      for (const r of rows) {
+        const key = parsed.groupBy.map((c) => (r[c] == null ? " NULL" : String(r[c]))).join("|");
+        if (!m.has(key)) m.set(key, []);
+        m.get(key).push(r);
+      }
+      groups = [...m.values()];
+    } else {
+      groups = rows.length > 0 ? [rows] : [[]]; // single group, even if empty, so COUNT(*) → 0
+    }
+
+    if (parsed.having) {
+      groups = groups.filter((g) => evalHaving(parsed.having, g));
+    }
+
+    const outCols = parsed.selectItems.map((it) => it.outName);
+    let outRows = groups.map((g) => {
+      const o = {};
+      for (const it of parsed.selectItems) o[it.outName] = evalAggOnGroup(it.expr, g);
+      return o;
+    });
+
+    if (parsed.orderBy && parsed.orderBy.length) {
+      for (const { column } of parsed.orderBy) {
+        if (!outCols.includes(column)) {
+          throw new Error(`ORDER BY column "${column}" must be in the SELECT list`);
+        }
+      }
+      outRows = sortRowsBy(outRows, parsed.orderBy);
+    }
+
+    if (parsed.limit != null) outRows = outRows.slice(0, parsed.limit);
+
+    return { columns: outCols, rows: outRows };
   }
 
-  // Output column names rename source columns via parsed.aliases (e.g.
-  // `imdb_rating AS rating` → output key is "rating"). The original source
-  // names are still used to read values from rows.
-  const aliases = parsed.aliases || {};
-  const outCols = srcCols.map((c) => aliases[c] || c);
+  // ---------- Non-aggregate path (Layer 1 shape) ----------
+  let srcCols;
+  if (parsed.isStar) {
+    srcCols = source.length ? Object.keys(source[0]) : [];
+  } else {
+    srcCols = parsed.selectItems.map((it) => {
+      if (it.expr.type !== "col") {
+        throw new Error(`Unsupported non-aggregate expression in SELECT: ${exprDefaultName(it.expr)}`);
+      }
+      return it.expr.name;
+    });
+    for (const c of srcCols) {
+      if (source.length && !(c in source[0])) throw new Error(`Unknown column: ${c}`);
+    }
+  }
+
+  const outCols = parsed.isStar
+    ? srcCols.slice()
+    : parsed.selectItems.map((it, i) => it.alias || srcCols[i]);
 
   let outRows = rows.map((row) => {
     const o = {};
-    for (let i = 0; i < srcCols.length; i++) {
-      o[outCols[i]] = row[srcCols[i]];
-    }
+    for (let i = 0; i < srcCols.length; i++) o[outCols[i]] = row[srcCols[i]];
     return o;
   });
 
@@ -673,9 +1160,7 @@ function executeQuery(sql, tables) {
     outRows = sortRowsBy(outRows, parsed.orderBy);
   }
 
-  if (parsed.limit != null) {
-    outRows = outRows.slice(0, parsed.limit);
-  }
+  if (parsed.limit != null) outRows = outRows.slice(0, parsed.limit);
 
   return { columns: outCols, rows: outRows };
 }
@@ -706,7 +1191,15 @@ function compareResults(actual, expected) {
 // Returns a diagnostic object so we can give granular feedback.
 // `orderMatters` is true only when the target query has an ORDER BY clause —
 // otherwise SQL row order is unspecified and we don't punish the learner for it.
-function diagnosePredict(builderCols, builderRowIdx, sourceRows, expected, orderMatters = true) {
+function coerceTypedValue(raw) {
+  if (raw == null) return null;
+  const t = String(raw).trim();
+  if (t === "") return null;
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  return t;
+}
+
+function diagnosePredict(builderCols, builderRowIdx, sourceRows, expected, orderMatters = true, typedValues = null, sourceCols = null) {
   const expCols = expected.columns;
   const expRows = expected.rows;
 
@@ -739,10 +1232,20 @@ function diagnosePredict(builderCols, builderRowIdx, sourceRows, expected, order
     };
   }
 
-  // Step 2: rows. Project source rows onto the expected columns.
-  const userRows = builderRowIdx.map((i) => {
+  // Step 2: rows. For each column in the expected result, read the value either
+  // from the picked source row (if the column exists in the source) or from the
+  // learner's typed input (if it's a computed column like an aggregate alias).
+  const srcColSet = new Set(sourceCols || (sourceRows.length ? Object.keys(sourceRows[0]) : []));
+  const userRows = builderRowIdx.map((i, rowIdx) => {
     const o = {};
-    for (const c of expCols) o[c] = sourceRows[i][c];
+    const typedRow = (typedValues && typedValues[rowIdx]) || {};
+    for (const c of expCols) {
+      if (srcColSet.has(c)) {
+        o[c] = sourceRows[i][c];
+      } else {
+        o[c] = coerceTypedValue(typedRow[c]);
+      }
+    }
     return o;
   });
 
@@ -1123,7 +1626,14 @@ function LayerMap({ layers, challenges, currentChallengeIdx, completedIds, onSel
 
 function formatCell(value) {
   if (value == null) return null; // sentinel for NULL rendering
-  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  if (typeof value === "number") {
+    if (Number.isInteger(value)) return String(value);
+    // Show the real value, trimmed to at most 6 decimals with trailing zeros
+    // removed. The previous fixed-1-decimal formatting collapsed AVG-style
+    // results like 8.8533… into "8.9", making them visually indistinguishable
+    // from the rounded expected output even when the comparison failed.
+    return parseFloat(value.toFixed(6)).toString();
+  }
   return String(value);
 }
 
@@ -1242,6 +1752,16 @@ function SqlEditor({ value, onChange, onSubmit, status, errorMessage, submitDisa
   const textareaRef = useRef(null);
   const lineCount = Math.max(value.split("\n").length, 4);
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join("\n");
+
+  // Auto-grow the textarea so its rendered height tracks soft-wrapped content
+  // exactly. Without this the caret drifts out of alignment with the
+  // highlighted-syntax overlay once the SQL wraps past the fixed min-height.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  }, [value]);
 
   const handleKeyDown = (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -1377,13 +1897,30 @@ const PHASE_LABEL = {
   filtering:    "WHERE — filtering rows",
   selecting:    "SELECT — choosing columns",
   distincting:  "DISTINCT — removing duplicates",
+  grouping:     "GROUP BY — colouring matching rows",
+  merging:      "merging rows per group",
+  having:       "HAVING — dropping groups",
+  emerging:     "aggregated result emerging",
   sorting:      "ORDER BY — sorting",
   limiting:     "LIMIT — taking top N",
   complete:     "transformation complete",
 };
 
+// Soft pastel backgrounds used to colour distinct GROUP BY groups during animation.
+const GROUP_TINTS = [
+  "rgba(168, 85, 247, 0.18)",  // purple
+  "rgba(34, 211, 238, 0.18)",  // cyan
+  "rgba(245, 158, 11, 0.18)",  // amber
+  "rgba(34, 197, 94, 0.18)",   // green
+  "rgba(244, 114, 182, 0.18)", // pink
+  "rgba(248, 113, 113, 0.18)", // rose
+];
+
 function computeFirstPhase(parsed, allColumns) {
   if (parsed.where) return "filtering";
+  if (parsed.isAggregate) {
+    return parsed.groupBy && parsed.groupBy.length ? "grouping" : "merging";
+  }
   if (!(parsed.columns.length === 1 && parsed.columns[0] === "*") &&
       parsed.columns.length < allColumns.length) return "selecting";
   if (parsed.distinct) return "distincting";
@@ -1392,7 +1929,7 @@ function computeFirstPhase(parsed, allColumns) {
   return null;
 }
 
-function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
+function AnimationStage({ parsed, sourceColumns, sourceRows, finalResult, onPhaseChange }) {
   // Local visual state. rowOrder holds source-row indices in current visual order.
   const initialOrder = useMemo(() => sourceRows.map((_, i) => i), [sourceRows]);
   const [rowOrder, setRowOrder]         = useState(initialOrder);
@@ -1401,6 +1938,12 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
   const [rowOffsets, setRowOffsets]     = useState({});  // sourceIdx -> px
   const [lifted, setLifted]             = useState(false);
   const [phase, setPhase]               = useState("init");
+  // GROUP BY tinting — sourceIdx → CSS background color. Empty before grouping phase.
+  const [rowTints, setRowTints]         = useState({});
+  // After the merge/HAVING phases on an aggregate query we swap the source-shaped
+  // animation table for the actual aggregated result — that's what makes
+  // `SELECT COUNT(*)` visibly resolve to "15", not a survivor row.
+  const [showFinalResult, setShowFinalResult] = useState(false);
 
   // Drive the phase sequence once on mount.
   useEffect(() => {
@@ -1431,6 +1974,104 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
         setRowOrder(currentOrder);
         await wait(80);
         if (cancelled) return;
+      }
+
+      // 1.5) GROUP BY / aggregate path
+      // For aggregate queries we play three phases on the (already-WHERE-filtered)
+      // source rows and stop there: grouping (colour) → merging (hide non-survivors)
+      // → having (drop failing groups). The final aggregated result is already shown
+      // in the Target table above, so we don't re-render it here.
+      if (parsed.isAggregate) {
+        // Compute group assignments. With no GROUP BY but aggregates present
+        // (e.g. `SELECT COUNT(*) FROM shows`), every row belongs to one group.
+        const groupOf = {}; // srcIdx -> key
+        const groupOrder = [];
+        const groupRowsByKey = new Map(); // key -> [srcIdx]
+        for (const srcIdx of currentOrder) {
+          const r = sourceRows[srcIdx];
+          const key = parsed.groupBy && parsed.groupBy.length
+            ? parsed.groupBy.map((c) => (r[c] == null ? " NULL" : String(r[c]))).join("|")
+            : "__all__";
+          groupOf[srcIdx] = key;
+          if (!groupRowsByKey.has(key)) {
+            groupRowsByKey.set(key, []);
+            groupOrder.push(key);
+          }
+          groupRowsByKey.get(key).push(srcIdx);
+        }
+
+        // Phase: grouping — tint each row by its group color.
+        announce("grouping");
+        const tints = {};
+        const colorByKey = {};
+        groupOrder.forEach((key, i) => {
+          colorByKey[key] = GROUP_TINTS[i % GROUP_TINTS.length];
+        });
+        for (const srcIdx of currentOrder) {
+          tints[srcIdx] = colorByKey[groupOf[srcIdx]];
+        }
+        setRowTints(tints);
+        await wait(500);
+        if (cancelled) return;
+
+        // Phase: merging — hide all rows except the first survivor of each group.
+        announce("merging");
+        const survivorByKey = new Map();
+        for (const srcIdx of currentOrder) {
+          if (!survivorByKey.has(groupOf[srcIdx])) survivorByKey.set(groupOf[srcIdx], srcIdx);
+        }
+        const toMerge = new Set(currentOrder.filter((i) => survivorByKey.get(groupOf[i]) !== i));
+        setHiddenRows((prev) => {
+          const next = new Set(prev);
+          toMerge.forEach((i) => next.add(i));
+          return next;
+        });
+        await wait(500);
+        if (cancelled) return;
+        currentOrder = currentOrder.filter((i) => !toMerge.has(i));
+        setRowOrder(currentOrder);
+        await wait(80);
+        if (cancelled) return;
+
+        // Phase: having — drop survivor rows whose group fails HAVING.
+        if (parsed.having) {
+          announce("having");
+          const failing = new Set();
+          for (const [key, idxs] of groupRowsByKey.entries()) {
+            const rowsForGroup = idxs.map((i) => sourceRows[i]);
+            if (!evalHaving(parsed.having, rowsForGroup)) failing.add(key);
+          }
+          const toDrop = new Set(currentOrder.filter((i) => failing.has(groupOf[i])));
+          if (toDrop.size > 0) {
+            setHiddenRows((prev) => {
+              const next = new Set(prev);
+              toDrop.forEach((i) => next.add(i));
+              return next;
+            });
+            const maxStagger = Math.max(0, toDrop.size - 1) * 50;
+            await wait(400 + maxStagger + 200);
+            if (cancelled) return;
+            currentOrder = currentOrder.filter((i) => !toDrop.has(i));
+            setRowOrder(currentOrder);
+            await wait(80);
+            if (cancelled) return;
+          }
+        }
+
+        // Phase: emerging — fade the source-shaped table out, then render the
+        // actual aggregated result. Without this step a query like
+        // `SELECT COUNT(*)` would leave you staring at a surviving source row.
+        if (finalResult && finalResult.columns && finalResult.columns.length > 0) {
+          announce("emerging");
+          await wait(280);
+          if (cancelled) return;
+          setShowFinalResult(true);
+          await wait(360);
+          if (cancelled) return;
+        }
+
+        announce("complete");
+        return;
       }
 
       // 2) SELECT
@@ -1560,9 +2201,13 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
   // applied, the 600ms ease-in-out animates the slide. 'settling' disables
   // transitions so the rowOrder/transform reset happens instantly.
   const rowTransitionFor = (visualIdx) => {
-    if (phase === "filtering" || phase === "limiting" || phase === "distincting") {
+    if (phase === "filtering" || phase === "limiting" || phase === "distincting" || phase === "having" || phase === "merging") {
       const delay = visualIdx * 50;
-      return `opacity 400ms ease-out ${delay}ms, transform 400ms ease-out ${delay}ms`;
+      return `opacity 400ms ease-out ${delay}ms, transform 400ms ease-out ${delay}ms, background-color 400ms ease-out`;
+    }
+    if (phase === "grouping") {
+      const delay = visualIdx * 40;
+      return `background-color 400ms ease-out ${delay}ms, opacity 400ms ease-out, transform 400ms ease-out`;
     }
     if (phase === "sorting") {
       // Lift sub-step has no offsets yet → small transition is fine. Once
@@ -1592,6 +2237,62 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
           </span>
         </div>
       </header>
+      {showFinalResult && finalResult ? (
+        <div
+          className="overflow-auto max-h-96 p-3"
+          style={{ animation: "sfFadeIn 320ms ease-out" }}
+        >
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0">
+              <tr className="bg-stone-950">
+                {finalResult.columns.map((c) => {
+                  const num = isNumericColumn(finalResult.rows, c);
+                  return (
+                    <th
+                      key={c}
+                      className={`px-3 py-2 font-mono font-semibold text-amber-200 border-b border-amber-500/30 whitespace-nowrap ${num ? "text-right" : "text-left"}`}
+                    >
+                      {c}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {finalResult.rows.length === 0 && (
+                <tr>
+                  <td className="px-3 py-6 text-center text-stone-600 italic" colSpan={Math.max(finalResult.columns.length, 1)}>
+                    (no rows)
+                  </td>
+                </tr>
+              )}
+              {finalResult.rows.map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}>
+                  {finalResult.columns.map((c) => {
+                    const num = isNumericColumn(finalResult.rows, c);
+                    const display = formatCell(row[c]);
+                    return (
+                      <td
+                        key={c}
+                        className={`px-3 py-1.5 border-b border-stone-800/50 align-middle ${num ? "text-right tabular-nums" : "text-left"}`}
+                      >
+                        {display === null ? (
+                          <span
+                            className="inline-block w-10 h-3 rounded-sm border border-dashed border-stone-700 bg-stone-950/70 align-middle"
+                            title="NULL"
+                          />
+                        ) : (
+                          <span className="text-stone-100 whitespace-pre">{display}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div className="overflow-auto max-h-96">
         <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed" }}>
           <thead className="sticky top-0">
@@ -1626,14 +2327,16 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
               const liftPx = lifted && !isHidden ? -3 : 0;
               const hidePx = isHidden ? 20 : 0;
               const translate = sortPx + liftPx + hidePx;
+              const tint = rowTints[srcIdx];
               return (
                 <tr
                   key={srcIdx}
-                  className={visualIdx % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}
+                  className={!tint ? (visualIdx % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20") : ""}
                   style={{
                     height: "30px",
                     opacity: isHidden ? 0 : 1,
                     transform: `translateY(${translate}px)`,
+                    backgroundColor: tint || undefined,
                     boxShadow:
                       lifted && !isHidden
                         ? "0 4px 12px rgba(0,0,0,0.45)"
@@ -1677,6 +2380,7 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, onPhaseChange }) {
           </tbody>
         </table>
       </div>
+      )}
     </section>
   );
 }
@@ -2007,16 +2711,22 @@ function ResultBuilder({
   sourceRows,
   builderCols,
   builderRowIdx,
+  typedValues,
+  computedColumns,
   onToggleColumn,
   onClearColumns,
   onRemoveRow,
   onMoveRow,
   onClearRows,
+  onSetTypedCell,
   onCheck,
   status,
   feedback,
   disabled,
 }) {
+  const computedSet = useMemo(() => new Set(computedColumns || []), [computedColumns]);
+  const isComputed = (c) => computedSet.has(c);
+  const safeTyped = typedValues || [];
   const borderClass =
     status === "correct"
       ? "border-emerald-500/70 shadow-[0_0_0_3px_rgba(16,185,129,0.15)]"
@@ -2056,9 +2766,10 @@ function ResultBuilder({
             )}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {sourceColumns.map((c) => {
+            {[...sourceColumns, ...(computedColumns || [])].map((c) => {
               const orderIdx = builderCols.indexOf(c);
               const selected = orderIdx !== -1;
+              const computed = isComputed(c);
               return (
                 <button
                   key={c}
@@ -2068,10 +2779,16 @@ function ResultBuilder({
                     "inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-mono transition-colors select-none",
                     selected
                       ? "border-amber-400/70 bg-amber-500/15 text-amber-100"
+                      : computed
+                      ? "border-purple-500/50 bg-purple-500/10 text-purple-200 hover:border-purple-400/70"
                       : "border-stone-700 bg-stone-900/60 text-stone-400 hover:border-cyan-400/50 hover:text-cyan-200",
                     disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
                   ].join(" ")}
-                  title={selected ? "Remove column" : "Add column"}
+                  title={
+                    computed
+                      ? `${selected ? "Remove" : "Add"} computed column (you'll type the values)`
+                      : selected ? "Remove column" : "Add column"
+                  }
                 >
                   {selected && (
                     <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/30 text-[9px] text-amber-100 font-semibold">
@@ -2079,6 +2796,9 @@ function ResultBuilder({
                     </span>
                   )}
                   <span>{c}</span>
+                  {computed && (
+                    <span className="text-[9px] uppercase tracking-wider opacity-70">computed</span>
+                  )}
                 </button>
               );
             })}
@@ -2143,6 +2863,24 @@ function ResultBuilder({
                       <tr key={`${srcIdx}-${ri}`} className={ri % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}>
                         {builderCols.map((c) => {
                           const num = isNumericColumn(sourceRows, c);
+                          if (isComputed(c)) {
+                            const typed = (safeTyped[ri] && safeTyped[ri][c]) ?? "";
+                            return (
+                              <td
+                                key={c}
+                                className={`px-2 py-1 border-b border-cyan-500/15 align-middle ${num ? "text-right" : "text-left"}`}
+                              >
+                                <input
+                                  type="text"
+                                  value={typed}
+                                  onChange={(e) => onSetTypedCell && onSetTypedCell(ri, c, e.target.value)}
+                                  disabled={disabled}
+                                  placeholder="type value"
+                                  className={`w-full bg-stone-950/70 border border-purple-500/40 focus:border-purple-300/80 focus:outline-none rounded px-1.5 py-0.5 text-purple-100 placeholder:text-stone-600 font-mono text-[12px] ${num ? "text-right tabular-nums" : "text-left"}`}
+                                />
+                              </td>
+                            );
+                          }
                           const display = formatCell(row[c]);
                           return (
                             <td
@@ -2611,7 +3349,7 @@ export default function SqlForge() {
 
   // PREDICT state — per-challenge builder, current-challenge feedback
   const [predictBuilders, setPredictBuilders] = useState(() =>
-    Object.fromEntries(CHALLENGES.map((c) => [c.id, { cols: [], rows: [] }]))
+    Object.fromEntries(CHALLENGES.map((c) => [c.id, { cols: [], rows: [], typedValues: [] }]))
   );
   const [predictFeedback, setPredictFeedback] = useState(null);
 
@@ -2653,7 +3391,7 @@ export default function SqlForge() {
   const isPipelineConfirmed = !!pipelineConfirmed[challenge.id];
   const editorLocked = isOpBuilder && !isPipelineConfirmed;
 
-  const builderState = predictBuilders[challenge.id] || { cols: [], rows: [] };
+  const builderState = predictBuilders[challenge.id] || { cols: [], rows: [], typedValues: [] };
 
   const expectedResult = useMemo(() => {
     try {
@@ -2666,6 +3404,13 @@ export default function SqlForge() {
   // For the "source" table panel we always show the full underlying table.
   const sourceColumns = SHOW_COLUMN_ORDER;
   const sourceRows = SHOWS_DATA;
+
+  // PREDICT: columns the user can pick that aren't source columns (e.g. "cnt"
+  // computed via COUNT(*) AS cnt). They become editable text-input cells.
+  const computedColumns = useMemo(
+    () => expectedResult.columns.filter((c) => !sourceColumns.includes(c)),
+    [expectedResult, sourceColumns]
+  );
 
   // Persist gems + completed + current challenge whenever any of them changes.
   // Held until hydration finishes so we don't blow away saved state on first render.
@@ -2715,7 +3460,7 @@ export default function SqlForge() {
     setAnimationParsed(null);
     setPredictFeedback(null);
     setPipelineConfirmed({});
-    setPredictBuilders(Object.fromEntries(CHALLENGES.map((c) => [c.id, { cols: [], rows: [] }])));
+    setPredictBuilders(Object.fromEntries(CHALLENGES.map((c) => [c.id, { cols: [], rows: [], typedValues: [] }])));
     setDiagnoseSelections(Object.fromEntries(CHALLENGES.filter((c) => c.type === "diagnose").map((c) => [c.id, null])));
     setQueries(Object.fromEntries(CHALLENGES.map((c) => [c.id, ""])));
     setPipelines(Object.fromEntries(CHALLENGES.map((c) => [c.id, []])));
@@ -2805,26 +3550,43 @@ export default function SqlForge() {
 
   const togglePredictSourceRow = (i) => {
     const cur = builderState.rows;
+    const typed = builderState.typedValues || [];
     const at = cur.indexOf(i);
-    if (at === -1) setBuilder({ ...builderState, rows: [...cur, i] });
-    else           setBuilder({ ...builderState, rows: cur.filter((x) => x !== i) });
+    if (at === -1) {
+      setBuilder({ ...builderState, rows: [...cur, i], typedValues: [...typed, {}] });
+    } else {
+      const nextRows = cur.filter((x) => x !== i);
+      const nextTyped = typed.filter((_, k) => k !== at);
+      setBuilder({ ...builderState, rows: nextRows, typedValues: nextTyped });
+    }
   };
 
   const removePredictRow = (i) => {
     const cur = [...builderState.rows];
+    const typed = [...(builderState.typedValues || [])];
     cur.splice(i, 1);
-    setBuilder({ ...builderState, rows: cur });
+    typed.splice(i, 1);
+    setBuilder({ ...builderState, rows: cur, typedValues: typed });
   };
 
   const movePredictRow = (i, dir) => {
     const j = i + dir;
     if (j < 0 || j >= builderState.rows.length) return;
     const cur = [...builderState.rows];
+    const typed = [...(builderState.typedValues || [])];
     [cur[i], cur[j]] = [cur[j], cur[i]];
-    setBuilder({ ...builderState, rows: cur });
+    [typed[i], typed[j]] = [typed[j], typed[i]];
+    setBuilder({ ...builderState, rows: cur, typedValues: typed });
   };
 
-  const clearPredictRows = () => setBuilder({ ...builderState, rows: [] });
+  const clearPredictRows = () => setBuilder({ ...builderState, rows: [], typedValues: [] });
+
+  const setTypedCell = (rowIdx, col, value) => {
+    const typed = [...(builderState.typedValues || [])];
+    while (typed.length <= rowIdx) typed.push({});
+    typed[rowIdx] = { ...(typed[rowIdx] || {}), [col]: value };
+    setBuilder({ ...builderState, typedValues: typed });
+  };
 
   const handleCheckPredict = () => {
     if (animating) return;
@@ -2837,7 +3599,15 @@ export default function SqlForge() {
       expected = { columns: [], rows: [] };
     }
     const orderMatters = !!(parsedTarget && parsedTarget.orderBy && parsedTarget.orderBy.length);
-    const diag = diagnosePredict(builderState.cols, builderState.rows, sourceRows, expected, orderMatters);
+    const diag = diagnosePredict(
+      builderState.cols,
+      builderState.rows,
+      sourceRows,
+      expected,
+      orderMatters,
+      builderState.typedValues || [],
+      sourceColumns,
+    );
     setPredictFeedback(diag);
     if (diag.ok) {
       setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
@@ -2936,13 +3706,21 @@ export default function SqlForge() {
   };
   const badge = BADGES[challenge.type] || BADGES.transform;
 
+  // Layer 1 keeps the warm-amber surface tint; Layer 2 deepens into cool blues
+  // to signal "we're underground now." Layer 3+ will follow.
+  const LAYER_BACKGROUNDS = {
+    1: "radial-gradient(1200px 600px at 20% -10%, rgba(120, 53, 15, 0.15), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(8, 47, 73, 0.18), transparent 60%), linear-gradient(180deg, #0c0a09 0%, #1c1917 100%)",
+    2: "radial-gradient(1200px 600px at 20% -10%, rgba(30, 64, 175, 0.22), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(14, 116, 144, 0.22), transparent 60%), linear-gradient(180deg, #0b1120 0%, #0f172a 100%)",
+  };
+  const layerName = LAYERS[challenge.layer - 1]?.name || "Unknown";
+
   return (
     <div
       className="min-h-screen text-stone-100"
       style={{
         fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif',
-        background:
-          "radial-gradient(1200px 600px at 20% -10%, rgba(120, 53, 15, 0.15), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(8, 47, 73, 0.18), transparent 60%), linear-gradient(180deg, #0c0a09 0%, #1c1917 100%)",
+        background: LAYER_BACKGROUNDS[challenge.layer] || LAYER_BACKGROUNDS[1],
+        transition: "background 600ms ease-out",
       }}
     >
       <style>{`
@@ -2965,6 +3743,10 @@ export default function SqlForge() {
           100% { transform: scale(1); filter: brightness(1); }
         }
         .sf-gem-pop { animation: sfGemPop 400ms ease-out; transform-origin: center; }
+        @keyframes sfFadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
         textarea::placeholder { color: #57534e; -webkit-text-fill-color: #57534e; }
       `}</style>
 
@@ -2985,7 +3767,7 @@ export default function SqlForge() {
           <div className="flex items-end justify-between gap-4 mb-4">
             <div>
               <div className="text-xs uppercase tracking-widest text-stone-500 mb-1">
-                Challenge {currentIdx + 1} of {CHALLENGES.length} — Layer 1: The Surface
+                Challenge {currentIdx + 1} of {CHALLENGES.length} — Layer {challenge.layer}: {layerName}
               </div>
               <h1 className="text-2xl font-bold text-stone-100">
                 <span className="text-stone-500 font-mono mr-2">{challenge.id}</span>
@@ -3035,11 +3817,14 @@ export default function SqlForge() {
                 sourceRows={sourceRows}
                 builderCols={builderState.cols}
                 builderRowIdx={builderState.rows}
+                typedValues={builderState.typedValues || []}
+                computedColumns={computedColumns}
                 onToggleColumn={togglePredictColumn}
                 onClearColumns={clearPredictColumns}
                 onRemoveRow={removePredictRow}
                 onMoveRow={movePredictRow}
                 onClearRows={clearPredictRows}
+                onSetTypedCell={setTypedCell}
                 onCheck={handleCheckPredict}
                 status={status}
                 feedback={predictFeedback}
@@ -3118,6 +3903,7 @@ export default function SqlForge() {
                 parsed={animationParsed}
                 sourceColumns={sourceColumns}
                 sourceRows={sourceRows}
+                finalResult={expectedResult}
                 onPhaseChange={setAnimationPhase}
               />
             </div>
