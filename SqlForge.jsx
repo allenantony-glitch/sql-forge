@@ -581,6 +581,18 @@ const CHALLENGES = [
     concepts: ["bridge", "lens"],
     why: "You mentally executed a JOIN — matching each review to its show, then sorting by name. That's thinking in SQL.",
   },
+  {
+    id: "3.7",
+    layer: 3,
+    type: "transform",
+    title: "Trust Your Instinct",
+    tables: ["shows", "reviews"],
+    targetFade: "labeled",
+    description: "You can see the target shape but not the values. Find the average review rating per show, for shows that have reviews. Show show name and average rating rounded to 1 decimal, sorted by average descending.",
+    targetSql: "SELECT s.name, ROUND(AVG(r.rating), 1) AS avg_rating FROM shows s INNER JOIN reviews r ON s.id = r.show_id GROUP BY s.name ORDER BY avg_rating DESC",
+    concepts: ["bridge", "group", "count", "pathfinder"],
+    why: "You solved this without seeing the exact answer — just the shape. That's real SQL confidence.",
+  },
 ];
 
 // ============================================================
@@ -675,7 +687,7 @@ const GEMS = [
   { id: "count",      name: "Count",      color: "#e2e8f0", shape: "circle",    concept: "Aggregates",      layer: 2 },
   { id: "teacher",    name: "Teacher",    color: "#fafafa", shape: "circle",    concept: "Explaining" },
   { id: "bridge",     name: "Bridge",     color: "#06b6d4", shape: "bridge",    concept: "JOIN" },
-  { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding",  layer: 3 },
+  { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding" },
 ];
 
 const GEM_BY_ID = Object.fromEntries(GEMS.map((g) => [g.id, g]));
@@ -2274,6 +2286,92 @@ function DataTable({
   );
 }
 
+// FADED TARGET — progressive scaffolding for the target table. The learner
+// sees the shape (cols/rows/headers/sort) but values are dimmed placeholders,
+// so they can't pattern-match against expected values. Levels:
+//   "full"     → render as a normal DataTable (caller handles this)
+//   "labeled"  → headers visible, row count visible, cells are "—"
+//   "shape"    → headers hidden (col_1, col_2…), row count visible, cells "—"
+//   "rowcount" → just "Expected: N rows", no table
+//   "none"     → renders nothing
+function FadedTarget({ columns, rows, fadeLevel }) {
+  if (fadeLevel === "none") return null;
+
+  if (fadeLevel === "rowcount") {
+    return (
+      <section className="rounded-lg border border-amber-500/50 bg-amber-500/5 p-6 flex items-center justify-center min-h-[120px]">
+        <span className="text-stone-400 text-sm">
+          Expected result:{" "}
+          <span className="text-amber-200 font-semibold">
+            {rows.length} row{rows.length === 1 ? "" : "s"}
+          </span>
+        </span>
+      </section>
+    );
+  }
+
+  const showHeaders = fadeLevel !== "shape";
+  const displayColumns = showHeaders
+    ? columns
+    : columns.map((_, i) => `col_${i + 1}`);
+  const fadedRows = rows.map(() => {
+    const o = {};
+    for (const c of displayColumns) o[c] = "—";
+    return o;
+  });
+
+  return (
+    <section className="rounded-lg border border-amber-500/50 shadow-[0_0_0_1px_rgba(245,158,11,0.15)] bg-stone-900/50 overflow-hidden">
+      <header className="px-3 py-2 flex items-center justify-between border-b border-amber-500/30 bg-amber-500/5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-widest text-amber-300">
+            Target (faded)
+          </span>
+          <span className="text-sm text-stone-200 font-medium">expected result</span>
+          <span className="text-[10px] text-amber-300/80 italic ml-1">
+            trust your instinct
+          </span>
+        </div>
+        <span className="text-[11px] text-stone-500">
+          {rows.length} row{rows.length === 1 ? "" : "s"} · {displayColumns.length} col{displayColumns.length === 1 ? "" : "s"}
+        </span>
+      </header>
+      <div className="overflow-auto max-h-72">
+        <table className="w-full text-xs border-collapse">
+          <thead className="sticky top-0">
+            <tr className="bg-stone-950">
+              {displayColumns.map((c) => (
+                <th
+                  key={c}
+                  className={`px-3 py-2 font-mono font-semibold border-b border-stone-800 whitespace-nowrap text-left ${
+                    showHeaders ? "text-stone-400" : "text-stone-700 italic"
+                  }`}
+                >
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {fadedRows.map((_, ri) => (
+              <tr key={ri} className={ri % 2 === 0 ? "bg-stone-900/40" : "bg-stone-900/20"}>
+                {displayColumns.map((c) => (
+                  <td
+                    key={c}
+                    className="px-3 py-1.5 border-b border-stone-800/50 align-middle text-left text-stone-600"
+                  >
+                    —
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function SqlEditor({ value, onChange, onSubmit, status, errorMessage, submitDisabled }) {
   const textareaRef = useRef(null);
   const lineCount = Math.max(value.split("\n").length, 4);
@@ -2420,16 +2518,18 @@ function ResultComparison({ actual, expected, errorMessage }) {
 // ============================================================
 
 const PHASE_LABEL = {
-  filtering:    "WHERE — filtering rows",
-  selecting:    "SELECT — choosing columns",
-  distincting:  "DISTINCT — removing duplicates",
-  grouping:     "GROUP BY — colouring matching rows",
-  merging:      "merging rows per group",
-  having:       "HAVING — dropping groups",
-  emerging:     "aggregated result emerging",
-  sorting:      "ORDER BY — sorting",
-  limiting:     "LIMIT — taking top N",
-  complete:     "transformation complete",
+  filtering:     "WHERE — filtering rows",
+  selecting:     "SELECT — choosing columns",
+  distincting:   "DISTINCT — removing duplicates",
+  grouping:      "GROUP BY — colouring matching rows",
+  merging:       "merging rows per group",
+  having:        "HAVING — dropping groups",
+  joining:       "JOIN — connecting tables",
+  joinFiltering: "INNER JOIN — dropping unmatched rows",
+  emerging:      "result emerging",
+  sorting:       "ORDER BY — sorting",
+  limiting:      "LIMIT — taking top N",
+  complete:      "transformation complete",
 };
 
 // Soft pastel backgrounds used to colour distinct GROUP BY groups during animation.
@@ -2500,6 +2600,71 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, finalResult, onPhas
         setRowOrder(currentOrder);
         await wait(80);
         if (cancelled) return;
+      }
+
+      // 1.25) JOIN — tint matched vs unmatched source rows, drop unmatched on
+      // INNER JOIN, then cross-fade to the actual joined result. This is the
+      // simplified Phase 9B animation (no table-sliding), but it still teaches
+      // the core concept: INNER JOIN drops unmatched rows, LEFT JOIN keeps them.
+      const hasJoin = (parsed.joins || []).length > 0;
+      if (hasJoin) {
+        const firstJoin = parsed.joins[0];
+        const rightTable = TABLES[firstJoin.table] || [];
+        const rightKeyCol = firstJoin.rightRef.name || firstJoin.rightRef.bound?.split(".")[1];
+        const leftKeyCol  = firstJoin.leftRef.name  || firstJoin.leftRef.bound?.split(".")[1];
+        const rightKeys = new Set(
+          rightTable.map((r) => r[rightKeyCol]).filter((v) => v != null)
+        );
+
+        announce("joining");
+        const joinTints = {};
+        for (const srcIdx of currentOrder) {
+          const row = sourceRows[srcIdx];
+          const leftKey = row[leftKeyCol];
+          const matched = leftKey != null && rightKeys.has(leftKey);
+          joinTints[srcIdx] = matched
+            ? "rgba(34, 197, 94, 0.18)"
+            : "rgba(244, 63, 94, 0.18)";
+        }
+        setRowTints(joinTints);
+        await wait(500);
+        if (cancelled) return;
+
+        if (firstJoin.type === "inner") {
+          announce("joinFiltering");
+          const unmatched = new Set();
+          for (const srcIdx of currentOrder) {
+            const row = sourceRows[srcIdx];
+            const leftKey = row[leftKeyCol];
+            if (leftKey == null || !rightKeys.has(leftKey)) unmatched.add(srcIdx);
+          }
+          if (unmatched.size > 0) {
+            setHiddenRows((prev) => {
+              const next = new Set(prev);
+              unmatched.forEach((i) => next.add(i));
+              return next;
+            });
+            const maxStagger = Math.max(0, unmatched.size - 1) * 50;
+            await wait(400 + maxStagger + 200);
+            if (cancelled) return;
+            currentOrder = currentOrder.filter((i) => !unmatched.has(i));
+            setRowOrder(currentOrder);
+            await wait(80);
+            if (cancelled) return;
+          }
+        }
+
+        if (finalResult && finalResult.columns && finalResult.columns.length > 0) {
+          announce("emerging");
+          await wait(280);
+          if (cancelled) return;
+          setShowFinalResult(true);
+          await wait(360);
+          if (cancelled) return;
+        }
+
+        announce("complete");
+        return;
       }
 
       // 1.5) GROUP BY / aggregate path
@@ -2727,11 +2892,11 @@ function AnimationStage({ parsed, sourceColumns, sourceRows, finalResult, onPhas
   // applied, the 600ms ease-in-out animates the slide. 'settling' disables
   // transitions so the rowOrder/transform reset happens instantly.
   const rowTransitionFor = (visualIdx) => {
-    if (phase === "filtering" || phase === "limiting" || phase === "distincting" || phase === "having" || phase === "merging") {
+    if (phase === "filtering" || phase === "limiting" || phase === "distincting" || phase === "having" || phase === "merging" || phase === "joinFiltering") {
       const delay = visualIdx * 50;
       return `opacity 400ms ease-out ${delay}ms, transform 400ms ease-out ${delay}ms, background-color 400ms ease-out`;
     }
-    if (phase === "grouping") {
+    if (phase === "grouping" || phase === "joining") {
       const delay = visualIdx * 40;
       return `background-color 400ms ease-out ${delay}ms, opacity 400ms ease-out, transform 400ms ease-out`;
     }
@@ -4231,14 +4396,12 @@ export default function SqlForge() {
         setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
         earnGemsForChallenge(challenge);
 
-        // Phase 9A skips the animation for JOIN queries — the JOIN-specific
-        // animation lands in Phase 9B. Layer 1-2 queries still animate.
-        const hasJoin = (parsed.joins || []).length > 0;
-        if (skipAnimations || hasJoin) {
+        if (skipAnimations) {
           setAnimationParsed(null);
           setAnimationPhase("idle");
         } else {
-          const first = computeFirstPhase(parsed, sourceColumns);
+          const hasJoin = (parsed.joins || []).length > 0;
+          const first = hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns);
           if (first) {
             setAnimationParsed(parsed);
             setAnimationPhase(first); // AnimationStage takes over from here
@@ -4368,10 +4531,8 @@ export default function SqlForge() {
       } else {
         try {
           const parsed = parseQuery(challenge.targetSql);
-          // JOIN animations land in Phase 9B — skip the animation for
-          // PREDICT challenges whose target query uses a JOIN.
           const hasJoin = (parsed.joins || []).length > 0;
-          const first = hasJoin ? null : computeFirstPhase(parsed, sourceColumns);
+          const first = hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns);
           if (first) {
             setAnimationParsed(parsed);
             setAnimationPhase(first);
@@ -4677,6 +4838,12 @@ export default function SqlForge() {
                 feedback={predictFeedback}
                 disabled={animating || status === "correct"}
               />
+            ) : challenge.targetFade && challenge.targetFade !== "full" ? (
+              <FadedTarget
+                columns={expectedResult.columns}
+                rows={expectedResult.rows}
+                fadeLevel={challenge.targetFade}
+              />
             ) : (
               <DataTable title="expected result" columns={expectedResult.columns} rows={expectedResult.rows} variant="target" />
             )}
@@ -4744,17 +4911,30 @@ export default function SqlForge() {
           )}
 
           {/* Animation stage — visible only when we kicked one off for this submission */}
-          {status === "correct" && animationParsed && animationPhase !== "idle" && (
-            <div className="mb-4">
-              <AnimationStage
-                parsed={animationParsed}
-                sourceColumns={sourceColumns}
-                sourceRows={sourceRows}
-                finalResult={expectedResult}
-                onPhaseChange={setAnimationPhase}
-              />
-            </div>
-          )}
+          {status === "correct" && animationParsed && animationPhase !== "idle" && (() => {
+            // For JOIN animations, the picker source (e.g. reviews in a
+            // PREDICT challenge) may differ from the FROM table the animation
+            // needs (shows). Re-derive from parsed.table so JOIN tinting
+            // operates on left-side rows.
+            const isJoinAnim = (animationParsed.joins || []).length > 0;
+            const animSourceRows = isJoinAnim
+              ? (TABLES[animationParsed.table] || sourceRows)
+              : sourceRows;
+            const animSourceCols = isJoinAnim
+              ? (TABLE_COLUMN_ORDER[animationParsed.table] || sourceColumns)
+              : sourceColumns;
+            return (
+              <div className="mb-4">
+                <AnimationStage
+                  parsed={animationParsed}
+                  sourceColumns={animSourceCols}
+                  sourceRows={animSourceRows}
+                  finalResult={expectedResult}
+                  onPhaseChange={setAnimationPhase}
+                />
+              </div>
+            );
+          })()}
 
           {/* Wrong-tool hint — shown after a wrong submission when a trigger matches */}
           {isWrongTool && status === "wrong" && matchingHint && (

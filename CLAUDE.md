@@ -44,7 +44,7 @@ Full design doc: @docs/design.md
 
 ## Build Phases
 We are building this app incrementally. Each phase adds one feature layer.
-Current phase: Phase 9A: Layer 3 (JOINs) - SQL engine + JOIN data + basic challenges
+Current phase: Phase 9B: JOIN animations + FADED TARGET
 - Phase 1: Core shell + Layer 1 TRANSFORM challenges ✓
 - Phase 2: Animation system ✓
 - Phase 3: Operation Builder ✓
@@ -53,6 +53,6 @@ Current phase: Phase 9A: Layer 3 (JOINs) - SQL engine + JOIN data + basic challe
 - Phase 6: Gem system + Syntax Shelf ✓
 - Phase 7: Layer 2 (GROUP BY + aggregates) ✓
 - Phase 8: TEACH-BACK ✓
-- Phase 9A: SQL engine + JOIN data + basic challenges
+- Phase 9A: SQL engine + JOIN data + basic challenges ✓
 - Phase 9B: JOIN animations + FADED TARGET
 - Phase 10: Layer 4-5 + MANY ROADS + REAL WORLD
