@@ -104,8 +104,12 @@ export function evalAggOnGroup(expr, groupRows) {
         }
         return groupRows.filter((r) => r[expr.arg.name] != null).length;
       }
-      const colName = expr.arg.name;
-      const vals = groupRows.map((r) => r[colName]).filter((v) => v != null);
+      // sum/avg/min/max can wrap a bare column or a value-yielding expression
+      // (e.g. SUM(CASE WHEN cond THEN 1 ELSE 0 END)). The latter is evaluated
+      // per row of the group before aggregation.
+      const vals = expr.arg.type === "col"
+        ? groupRows.map((r) => r[expr.arg.name]).filter((v) => v != null)
+        : groupRows.map((r) => evalValueExpr(expr.arg, r)).filter((v) => v != null);
       if (vals.length === 0) return null;
       if (f === "sum") return vals.reduce((a, b) => a + b, 0);
       if (f === "avg") return vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -183,9 +187,13 @@ export function bindAllColumns(parsed, bindCol) {
         e.qualifier = null;
         return;
       case "agg":
-        if (e.arg && e.arg.type === "col") {
-          e.arg.name = bindCol(e.arg.qualifier, e.arg.name);
-          e.arg.qualifier = null;
+        if (e.arg) {
+          if (e.arg.type === "col") {
+            e.arg.name = bindCol(e.arg.qualifier, e.arg.name);
+            e.arg.qualifier = null;
+          } else if (e.arg.type !== "star") {
+            walkValue(e.arg);
+          }
         }
         return;
       case "func":
