@@ -95,7 +95,27 @@ sql-forge/
 - Output directory: `dist`
 
 ## Build Phases
-Current phase: Phase 10 — Restructure to Vite + React multi-file project
-- Phase 1–9B: Built as single JSX artifact ✓
-- Phase 10: Restructure to Vite + React, split into modules, deploy on Vercel
-- Phase 11+: Continue adding Layers 4-5, MANY ROADS, REAL WORLD
+Current phase: Phase 12
+
+Completed:
+- Phase 1: Core shell + Layer 1 TRANSFORM challenges ✓
+- Phase 2: Animation system ✓
+- Phase 3: Operation Builder ✓
+- Phase 4: PREDICT build challenges ✓
+- Phase 5: WRONG TOOL + DIAGNOSE challenges ✓
+- Phase 6: Gem system + Syntax Shelf ✓
+- Phase 7: Layer 2 (GROUP BY + aggregates) ✓
+- Phase 8: TEACH-BACK (client-side validation) ✓
+- Phase 9A: Layer 3 SQL engine + JOIN challenges ✓
+- Phase 9B: JOIN animations + FADED TARGET ✓
+- Phase 10: Restructure to Vite + React, deploy on Vercel ✓
+- Phase 11: MANY ROADS challenge type (2 challenges in Layer 3) ✓
+
+Remaining:
+- Phase 12: REAL WORLD challenge type + ER diagram component (2 challenges in Layer 3)
+- Phase 13: Layer 4 SQL engine — subqueries in WHERE/FROM/SELECT, EXISTS, NOT IN/NOT EXISTS
+- Phase 14: Layer 4 challenges (6-8 challenges) + UNION/INTERSECT/EXCEPT engine support
+- Phase 15: Layer 5 SQL engine — window functions (RANK, DENSE_RANK, ROW_NUMBER, LAG, LEAD, PARTITION BY, frame clauses)
+- Phase 16: Layer 5 SQL engine — CTEs (WITH...AS, multiple CTEs, recursive) + string/date functions (EXTRACT, UPPER, SUBSTRING, CONCAT)
+- Phase 17: Layer 5 challenges (8-10 challenges) + Master Trials (5 HackerRank-style problems)
+- Phase 18: Polish — mobile responsiveness, gem dimming timer, daily challenge, edge cases, performance

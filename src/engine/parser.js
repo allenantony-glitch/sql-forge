@@ -152,6 +152,10 @@ export function parseQuery(sql) {
           if (argT && argT.type === "star") {
             consume();
             arg = { type: "star" };
+          } else if (argT && argT.type === "ident" && argT.value === "case") {
+            // SUM/AVG/MIN/MAX/COUNT can wrap a CASE expression that's
+            // evaluated per row, then aggregated across the group.
+            arg = parseValueExpr();
           } else if (argT && argT.type === "ident") {
             // COUNT(DISTINCT <col>) — DISTINCT keyword is only valid inside COUNT
             let isDistinct = false;
@@ -162,7 +166,7 @@ export function parseQuery(sql) {
             const ref = parseColumnRef();
             arg = { type: "col", name: ref.name, qualifier: ref.qualifier, distinct: isDistinct };
           } else {
-            throw new Error(`Expected column or * in ${fname.toUpperCase()}(...)`);
+            throw new Error(`Expected column, *, or CASE in ${fname.toUpperCase()}(...)`);
           }
           if (!peek() || peek().type !== "rparen") throw new Error(`Expected ) after ${fname.toUpperCase()}(...)`);
           consume();

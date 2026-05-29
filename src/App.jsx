@@ -21,6 +21,7 @@ import { PredictQueryCard, ResultBuilder } from './components/challenges/Predict
 import { WrongToolHint } from './components/challenges/WrongToolHint';
 import { DiagnoseChallenge } from './components/challenges/DiagnoseChallenge';
 import { TeachBackChallenge } from './components/challenges/TeachBackChallenge';
+import { ManyRoadsChallenge } from './components/challenges/ManyRoadsChallenge';
 import { saveState, loadState } from './hooks/usePersistedState';
 
 export default function App() {
@@ -54,6 +55,10 @@ export default function App() {
     Object.fromEntries(CHALLENGES.filter((c) => c.type === "teach_back").map((c) => [c.id, ""]))
   );
   const [teachBackResults, setTeachBackResults] = useState({}); // id -> { correct, presentConcepts, missingConcepts }
+
+  // MANY ROADS state — challenge id -> chosen approach id ("a" | "b" | "c").
+  // Persisted so we can nudge across sessions when the learner pattern-locks.
+  const [manyRoadsHistory, setManyRoadsHistory] = useState({});
 
   // Animation orchestration: phase is reported up by AnimationStage as it runs.
   // 'idle' before/after any animation; sub-phases while running; 'complete' at the end.
@@ -91,6 +96,15 @@ export default function App() {
         const idx = CHALLENGES.findIndex((c) => c.id === data.currentChallenge);
         if (idx >= 0) setCurrentIdx(idx);
       }
+      if (data.manyRoadsHistory && typeof data.manyRoadsHistory === "object") {
+        const filtered = {};
+        for (const ch of CHALLENGES) {
+          if (ch.type !== "many_roads") continue;
+          const v = data.manyRoadsHistory[ch.id];
+          if (typeof v === "string") filtered[ch.id] = v;
+        }
+        setManyRoadsHistory(filtered);
+      }
     }
     setHydrated(true);
   }, []);
@@ -107,6 +121,7 @@ export default function App() {
   const isWrongTool = challenge.type === "wrong_tool";
   const isDiagnose = challenge.type === "diagnose";
   const isTeachBack = challenge.type === "teach_back";
+  const isManyRoads = challenge.type === "many_roads";
   const pipeline = pipelines[challenge.id] || [];
   const pipelineFilled = pipeline.filter(Boolean);
   const pipelineValidation = useMemo(() => validatePipeline(pipelineFilled), [pipelineFilled]);
@@ -159,8 +174,8 @@ export default function App() {
   // Held until hydration finishes so we don't blow away saved state on first render.
   useEffect(() => {
     if (!hydrated) return;
-    saveState({ gems, completed, currentChallenge: challenge.id });
-  }, [hydrated, gems, completed, challenge.id]);
+    saveState({ gems, completed, currentChallenge: challenge.id, manyRoadsHistory });
+  }, [hydrated, gems, completed, challenge.id, manyRoadsHistory]);
 
   // Earn gems for the just-correctly-solved challenge. Each concept ratchets up
   // to the level its challenge type / breadth warrants. Pop animation triggers
@@ -207,6 +222,7 @@ export default function App() {
     setDiagnoseSelections(Object.fromEntries(CHALLENGES.filter((c) => c.type === "diagnose").map((c) => [c.id, null])));
     setTeachBackTexts(Object.fromEntries(CHALLENGES.filter((c) => c.type === "teach_back").map((c) => [c.id, ""])));
     setTeachBackResults({});
+    setManyRoadsHistory({});
     setQueries(Object.fromEntries(CHALLENGES.map((c) => [c.id, ""])));
     setPipelines(Object.fromEntries(CHALLENGES.map((c) => [c.id, []])));
   };
@@ -510,8 +526,33 @@ export default function App() {
     wrong_tool: { icon: "⚡", label: "Find the Right Tool" },
     diagnose: { icon: "🩺", label: "Diagnose the Bug" },
     teach_back: { icon: "🎓", label: "Explain It" },
+    many_roads: { icon: "🔀", label: "Explore Alternatives" },
   };
   const badge = BADGES[challenge.type] || BADGES.transform;
+
+  // MANY ROADS nudge: when the learner has picked the same approach in the
+  // most recent 2+ many_roads challenges (other than the current one), suggest
+  // a different one this time. Null means "no suggestion."
+  const manyRoadsSuggestion = useMemo(() => {
+    if (!isManyRoads) return null;
+    const priorIds = CHALLENGES
+      .filter((c) => c.type === "many_roads" && c.id !== challenge.id)
+      .map((c) => manyRoadsHistory[c.id])
+      .filter(Boolean);
+    if (priorIds.length < 2) return null;
+    const lastTwo = priorIds.slice(-2);
+    if (lastTwo[0] !== lastTwo[1]) return null;
+    const overused = lastTwo[0];
+    const alt = (challenge.approaches || []).find((a) => a.id !== overused);
+    return alt ? alt.id : null;
+  }, [isManyRoads, challenge, manyRoadsHistory]);
+
+  const handleManyRoadsSolve = (writtenApproachId) => {
+    setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
+    setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
+    earnGemsForChallenge(challenge);
+    setManyRoadsHistory((h) => ({ ...h, [challenge.id]: writtenApproachId }));
+  };
 
   // Layer 1 keeps the warm-amber surface tint; Layer 2 deepens into cool blues;
   // Layer 3 brings two-tone cyan/teal — the crossroads where tunnels meet.
@@ -592,8 +633,24 @@ export default function App() {
           {/* Predict — query card sits above source + builder */}
           {isPredict && <PredictQueryCard sql={challenge.displaySql} />}
 
-          {/* Source + Target/Builder side by side — skip for DIAGNOSE and TEACH-BACK (each has its own layout) */}
-          {!isDiagnose && !isTeachBack && (
+          {/* Source tables — MANY ROADS shows them full-width above its own UI */}
+          {isManyRoads && (
+            <div className={`mb-4 grid grid-cols-1 ${sourceTables.length > 1 ? "lg:grid-cols-2" : ""} gap-3`}>
+              {sourceTables.map((t) => (
+                <DataTable
+                  key={t.name}
+                  title={t.name}
+                  columns={t.columns}
+                  rows={t.rows}
+                  variant="source"
+                  maxHeight="max-h-56"
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Source + Target/Builder side by side — skip for DIAGNOSE, TEACH-BACK, and MANY ROADS (each has its own layout) */}
+          {!isDiagnose && !isTeachBack && !isManyRoads && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
             {isMultiSource ? (
               <div className="space-y-3">
@@ -681,8 +738,21 @@ export default function App() {
             </div>
           )}
 
-          {/* Editor — hidden in predict, diagnose, and teach-back modes (each has its own answer surface) */}
-          {!isPredict && !isDiagnose && !isTeachBack && (
+          {/* MANY ROADS — three approaches, tradeoff question, write-from-memory editor */}
+          {isManyRoads && (
+            <ManyRoadsChallenge
+              challenge={challenge}
+              suggestedWriteId={manyRoadsSuggestion}
+              status={status}
+              skipAnimations={skipAnimations}
+              onSolve={handleManyRoadsSolve}
+              onNext={handleNext}
+              hasNext={hasNext}
+            />
+          )}
+
+          {/* Editor — hidden in predict, diagnose, teach-back, and many-roads modes (each has its own answer surface) */}
+          {!isPredict && !isDiagnose && !isTeachBack && !isManyRoads && (
             <div className="mb-4 space-y-2" ref={editorAnchorRef}>
               {editorLocked ? (
                 <div className="rounded-lg border border-dashed border-stone-800 bg-stone-950/40 p-6 text-center text-xs text-stone-500 italic">
@@ -750,15 +820,15 @@ export default function App() {
             <WrongToolHint message={matchingHint.message} />
           )}
 
-          {/* Feedback — teach-back renders its own success panel inside the component */}
-          {status === "correct" && !animating && !isTeachBack && (
+          {/* Feedback — teach-back and many-roads render their own success panels inside the component */}
+          {status === "correct" && !animating && !isTeachBack && !isManyRoads && (
             <WhyPanel
               why={isDiagnose ? challenge.explanation : challenge.why}
               onNext={handleNext}
               hasNext={hasNext}
             />
           )}
-          {status === "wrong" && !isPredict && !isDiagnose && !isTeachBack && (
+          {status === "wrong" && !isPredict && !isDiagnose && !isTeachBack && !isManyRoads && (
             <ResultComparison actual={actualByCurrent} expected={expectedResult} errorMessage={errorByCurrent} />
           )}
         </main>
