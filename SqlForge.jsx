@@ -23,13 +23,59 @@ const SHOWS_DATA = [
   { id: 15, name: "Lost",             genre: "Mystery", imdb_rating: 8.3, certificate: "PG-13", premiere_year: 2004, finale_year: 2010, episode_count: 121, overview: "Plane crash survivors uncover the mysteries of a strange island." },
 ];
 
-// Layer 3 will populate this — we keep it declared now so the shape of TABLES
-// stays stable when new layers add joinable data.
-const EPISODES_DATA = [];
+const EPISODES_DATA = [
+  { id: 1,  show_id: 1,  season: 1, episode: 1,  title: "Pilot",                       air_date: "2008-01-20", runtime_min: 58, rating: 8.9 },
+  { id: 2,  show_id: 1,  season: 1, episode: 2,  title: "Cat's in the Bag",            air_date: "2008-01-27", runtime_min: 48, rating: 8.5 },
+  { id: 3,  show_id: 1,  season: 5, episode: 16, title: "Felina",                      air_date: "2013-09-29", runtime_min: 55, rating: 9.9 },
+  { id: 4,  show_id: 2,  season: 1, episode: 1,  title: "Winter Is Coming",            air_date: "2011-04-17", runtime_min: 62, rating: 9.1 },
+  { id: 5,  show_id: 2,  season: 8, episode: 6,  title: "The Iron Throne",             air_date: "2019-05-19", runtime_min: 80, rating: 4.1 },
+  { id: 6,  show_id: 3,  season: 1, episode: 1,  title: "Pilot",                       air_date: "2005-03-24", runtime_min: 23, rating: 7.6 },
+  { id: 7,  show_id: 3,  season: 7, episode: 15, title: "Finale",                      air_date: "2013-05-16", runtime_min: 50, rating: 9.7 },
+  { id: 8,  show_id: 4,  season: 1, episode: 1,  title: "Chapter One",                 air_date: "2016-07-15", runtime_min: 48, rating: 8.6 },
+  { id: 9,  show_id: 5,  season: 1, episode: 1,  title: "The Target",                  air_date: "2002-06-02", runtime_min: 59, rating: 9.0 },
+  { id: 10, show_id: 6,  season: 1, episode: 1,  title: "The Pilot",                   air_date: "1994-09-22", runtime_min: 22, rating: 8.3 },
+  { id: 11, show_id: 9,  season: 1, episode: 1,  title: "Good News About Hell",        air_date: "2022-02-18", runtime_min: 57, rating: 8.3 },
+  { id: 12, show_id: 10, season: 1, episode: 1,  title: "Celebration",                 air_date: "2018-06-03", runtime_min: 63, rating: 7.9 },
+  { id: 13, show_id: 11, season: 1, episode: 1,  title: "1:23:45",                     air_date: "2019-05-06", runtime_min: 66, rating: 9.4 },
+  { id: 14, show_id: 11, season: 1, episode: 5,  title: "Vichnaya Pamyat",             air_date: "2019-06-03", runtime_min: 72, rating: 9.7 },
+  { id: 15, show_id: 12, season: 1, episode: 1,  title: "A Study in Pink",             air_date: "2010-07-25", runtime_min: 88, rating: 9.2 },
+  { id: 16, show_id: 8,  season: 1, episode: 1,  title: "Uno",                         air_date: "2015-02-08", runtime_min: 53, rating: 8.2 },
+  { id: 17, show_id: 7,  season: 1, episode: 1,  title: "Wolferton Splash",            air_date: "2016-11-04", runtime_min: 57, rating: 8.3 },
+  { id: 18, show_id: 13, season: 1, episode: 1,  title: "Chapter 1: The Mandalorian",  air_date: "2019-11-12", runtime_min: 39, rating: 8.7 },
+  { id: 19, show_id: 14, season: 1, episode: 1,  title: "Days Gone Bye",               air_date: "2010-10-31", runtime_min: 67, rating: 9.2 },
+  { id: 20, show_id: 15, season: 1, episode: 1,  title: "Pilot",                       air_date: "2004-09-22", runtime_min: 73, rating: 8.7 },
+];
 
-const TABLES = { shows: SHOWS_DATA, episodes: EPISODES_DATA };
+// Some shows deliberately have no reviews — this powers the LEFT JOIN /
+// "find the ghosts" challenges in Layer 3. Shows WITHOUT reviews:
+//   4 (Stranger Things), 6 (Friends), 7 (The Crown), 9 (Severance),
+//   13 (Mandalorian), 14 (Walking Dead), 15 (Lost)  → 7 orphans
+const REVIEWS_DATA = [
+  { id: 1,  show_id: 1,  viewer: "alice",   rating: 10, review: "Perfect finale" },
+  { id: 2,  show_id: 1,  viewer: "bob",     rating: 9,  review: "Incredible character development" },
+  { id: 3,  show_id: 2,  viewer: "alice",   rating: 8,  review: "Great until season 8" },
+  { id: 4,  show_id: 2,  viewer: "charlie", rating: 7,  review: "Disappointing ending" },
+  { id: 5,  show_id: 3,  viewer: "bob",     rating: 9,  review: "Endlessly rewatchable" },
+  { id: 6,  show_id: 5,  viewer: "diana",   rating: 10, review: "The greatest TV show ever made" },
+  { id: 7,  show_id: 8,  viewer: "alice",   rating: 9,  review: "Slow burn perfection" },
+  { id: 8,  show_id: 11, viewer: "charlie", rating: 10, review: "Haunting and important" },
+  { id: 9,  show_id: 12, viewer: "diana",   rating: 9,  review: "Brilliant mysteries" },
+  { id: 10, show_id: 10, viewer: "bob",     rating: 9,  review: "Sharp writing throughout" },
+];
 
-const SHOW_COLUMN_ORDER = ["id", "name", "genre", "imdb_rating", "certificate", "premiere_year", "finale_year", "episode_count", "overview"];
+const TABLES = { shows: SHOWS_DATA, episodes: EPISODES_DATA, reviews: REVIEWS_DATA };
+
+const SHOW_COLUMN_ORDER    = ["id", "name", "genre", "imdb_rating", "certificate", "premiere_year", "finale_year", "episode_count", "overview"];
+const EPISODE_COLUMN_ORDER = ["id", "show_id", "season", "episode", "title", "air_date", "runtime_min", "rating"];
+const REVIEW_COLUMN_ORDER  = ["id", "show_id", "viewer", "rating", "review"];
+
+// Lookup used by the engine (bind / join construction) and by the multi-table
+// source display in the UI.
+const TABLE_COLUMN_ORDER = {
+  shows:    SHOW_COLUMN_ORDER,
+  episodes: EPISODE_COLUMN_ORDER,
+  reviews:  REVIEW_COLUMN_ORDER,
+};
 
 // ============================================================
 // CHALLENGES — Phase 1 TRANSFORM only
@@ -411,6 +457,130 @@ const CHALLENGES = [
     concepts: ["count", "teacher"],
     why: "You articulated the difference between COUNT(*) and COUNT(column). When you can explain what NULL means in aggregation, you truly understand it.",
   },
+
+  // ────────────────────────────────────────────────────────────────
+  // LAYER 3 — The Crossroads: joining tables
+  // ────────────────────────────────────────────────────────────────
+  {
+    id: "3.1",
+    layer: 3,
+    type: "operation_builder",
+    title: "Two Veins, One Ore",
+    tables: ["shows", "episodes"],
+    description: "Build the pipeline, then write the SQL. Connect shows with their episodes — show the show name, episode title, and episode rating.",
+    expectedPipeline: ["join", "select"],
+    targetSql: "SELECT s.name, e.title, e.rating FROM shows s INNER JOIN episodes e ON s.id = e.show_id",
+    concepts: ["bridge", "select", "compass"],
+    why: "INNER JOIN connects two tables on a matching key. Only rows that match in BOTH tables appear. You just combined two data sources into one result.",
+  },
+  {
+    id: "3.2",
+    layer: 3,
+    type: "transform",
+    title: "Count the Episodes",
+    tables: ["shows", "episodes"],
+    description: "How many episodes does each show have? Show the show name and episode count, sorted by count descending.",
+    targetSql: "SELECT s.name, COUNT(e.id) AS episode_count FROM shows s INNER JOIN episodes e ON s.id = e.show_id GROUP BY s.name ORDER BY episode_count DESC",
+    concepts: ["bridge", "group", "count", "sort"],
+    why: "JOIN + GROUP BY + COUNT — the bread and butter of real SQL. Connect tables, group by a dimension, count per group.",
+  },
+  {
+    id: "3.3",
+    layer: 3,
+    type: "wrong_tool",
+    title: "The Orphans",
+    tables: ["shows", "reviews"],
+    description: "Find ALL shows with their review count — including shows with zero reviews.",
+    targetSql: "SELECT s.name, COUNT(r.id) AS review_count FROM shows s LEFT JOIN reviews r ON s.id = r.show_id GROUP BY s.name ORDER BY review_count ASC",
+    hints: [
+      {
+        // Matches plain JOIN / INNER JOIN where LEFT isn't present.
+        trigger: (q) => {
+          const lower = q.toLowerCase();
+          return /\bjoin\b/.test(lower) && !/\bleft\b/.test(lower);
+        },
+        message:
+          "INNER JOIN dropped shows with no reviews — your result is missing 7 shows. LEFT JOIN keeps ALL rows from the left table, filling unmatched right-side columns with NULL. Try LEFT JOIN instead.",
+      },
+    ],
+    concepts: ["bridge"],
+    why: "INNER JOIN loses unmatched rows. LEFT JOIN keeps them all — the unmatched ones just get NULLs on the right side. You discovered this by watching rows disappear.",
+  },
+  {
+    id: "3.4",
+    layer: 3,
+    type: "transform",
+    title: "Find the Ghosts",
+    tables: ["shows", "reviews"],
+    description: "Find shows that have ZERO reviews. Show only the show name, sorted alphabetically.",
+    targetSql: "SELECT s.name FROM shows s LEFT JOIN reviews r ON s.id = r.show_id WHERE r.id IS NULL ORDER BY s.name ASC",
+    concepts: ["bridge", "filter"],
+    why: "LEFT JOIN + WHERE IS NULL — the classic pattern for 'find items without matches.' The LEFT JOIN keeps unmatched shows with NULL review columns, then WHERE IS NULL filters to ONLY those unmatched ones.",
+  },
+  {
+    id: "3.5",
+    layer: 3,
+    type: "teach_back",
+    title: "Explain the Bridge",
+    description: "Articulate when INNER vs LEFT JOIN matters by diagnosing a common bug.",
+    scenario: "Two animations: INNER JOIN slides two tables together and drops unmatched rows from both sides. LEFT JOIN slides them together but keeps ALL rows from the left table — unmatched ones get empty/NULL cells on the right.",
+    prompt: "A data analyst says 'I keep getting fewer results than expected from my JOIN.' What question would you ask them, and what's the likely fix?",
+    requiredConcepts: [
+      {
+        id: "unmatched_rows",
+        label: "Some rows have no match in the other table",
+        triggers: [
+          "no match",
+          "unmatched",
+          "don't match",
+          "doesn't match",
+          "missing.*match",
+          "not.*matching",
+          "without.*match",
+          "no corresponding",
+          "no related",
+          "dropping",
+          "dropped",
+          "drop.*row",
+          "losing.*row",
+          "lose.*row",
+        ],
+        hint: "Think about what happens to rows that don't have a partner in the other table...",
+      },
+      {
+        id: "left_join_fix",
+        label: "Switch to LEFT JOIN to keep unmatched rows",
+        triggers: [
+          "left join",
+          "left outer",
+          "use left",
+          "switch to left",
+          "change.*left",
+          "try left",
+          "outer join",
+          "keep all",
+          "preserve all",
+          "retain all",
+        ],
+        hint: "There's a type of JOIN that keeps all rows from one side even without matches...",
+      },
+    ],
+    concepts: ["bridge", "teacher"],
+    why: "You explained the INNER vs LEFT JOIN difference by diagnosing a real problem. This is exactly how debugging SQL works in practice.",
+  },
+  {
+    id: "3.6",
+    layer: 3,
+    type: "predict",
+    title: "Read the Join",
+    tables: ["shows", "reviews"],
+    predictSourceTable: "reviews",
+    description: "Read this query and build the result by hand. Pick each review, type the matching show name, and order by name.",
+    displaySql: "SELECT s.name, r.viewer, r.rating FROM shows s INNER JOIN reviews r ON s.id = r.show_id ORDER BY s.name ASC",
+    targetSql: "SELECT s.name, r.viewer, r.rating FROM shows s INNER JOIN reviews r ON s.id = r.show_id ORDER BY s.name ASC",
+    concepts: ["bridge", "lens"],
+    why: "You mentally executed a JOIN — matching each review to its show, then sorting by name. That's thinking in SQL.",
+  },
 ];
 
 // ============================================================
@@ -429,7 +599,7 @@ const OPERATIONS = {
 };
 
 const OPERATIONS_LIST = ["filter", "select", "sort", "limit", "group", "having", "join", "window"];
-const UNLOCKED_THROUGH_LAYER = 2;
+const UNLOCKED_THROUGH_LAYER = 3;
 
 // Canonical SQL execution order rank — lower = earlier.
 const CANONICAL_RANK = { filter: 0, group: 1, having: 2, select: 3, sort: 4, limit: 5 };
@@ -482,7 +652,7 @@ function pipelineMatchesExpected(ops, expected) {
 const LAYERS = [
   { num: 1, name: "The Surface",    subtitle: "See and Filter",         unlocked: true  },
   { num: 2, name: "Upper Mine",     subtitle: "Aggregate and Group",    unlocked: true  },
-  { num: 3, name: "The Crossroads", subtitle: "Joining Tables",         unlocked: false },
+  { num: 3, name: "The Crossroads", subtitle: "Joining Tables",         unlocked: true  },
   { num: 4, name: "Deep Shafts",    subtitle: "Subqueries and Sets",    unlocked: false },
   { num: 5, name: "The Core",       subtitle: "Windows, CTEs, Mastery", unlocked: false },
 ];
@@ -504,7 +674,7 @@ const GEMS = [
   { id: "guard",      name: "Guard",      color: "#f97316", shape: "shield",    concept: "HAVING",          layer: 2 },
   { id: "count",      name: "Count",      color: "#e2e8f0", shape: "circle",    concept: "Aggregates",      layer: 2 },
   { id: "teacher",    name: "Teacher",    color: "#fafafa", shape: "circle",    concept: "Explaining" },
-  { id: "bridge",     name: "Bridge",     color: "#06b6d4", shape: "bridge",    concept: "JOIN",            layer: 3 },
+  { id: "bridge",     name: "Bridge",     color: "#06b6d4", shape: "bridge",    concept: "JOIN" },
   { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding",  layer: 3 },
 ];
 
@@ -529,9 +699,12 @@ const SYNTAX_TEMPLATES = [
   { id: "group_by",     gemId: "group",  keyword: "GROUP BY",         template: "GROUP BY <column>" },
   { id: "having",       gemId: "guard",  keyword: "HAVING",           template: "HAVING <aggregate> <op> <value>" },
   { id: "count",        gemId: "count",  keyword: "COUNT",            template: "COUNT(*) | COUNT(<column>)" },
+  { id: "count_dist",   gemId: "count",  keyword: "COUNT DISTINCT",   template: "COUNT(DISTINCT <column>)" },
   { id: "sum_avg",      gemId: "count",  keyword: "AVG / SUM",        template: "AVG(<column>) | SUM(<column>)" },
   { id: "min_max",      gemId: "count",  keyword: "MIN / MAX",        template: "MIN(<column>) | MAX(<column>)" },
   { id: "round",        gemId: "count",  keyword: "ROUND",            template: "ROUND(<value>, <decimals>)" },
+  { id: "inner_join",   gemId: "bridge", keyword: "INNER JOIN",       template: "FROM <t1> <a1> INNER JOIN <t2> <a2> ON <a1.col> = <a2.col>" },
+  { id: "left_join",    gemId: "bridge", keyword: "LEFT JOIN",        template: "FROM <t1> <a1> LEFT JOIN <t2> <a2> ON <a1.col> = <a2.col>" },
 ];
 
 // Brightness rules: walk every concept on the challenge and ratchet the gem up.
@@ -586,6 +759,7 @@ function tokenize(sql) {
     }
     if (c === "*") { tokens.push({ type: "star" }); i++; continue; }
     if (c === ",") { tokens.push({ type: "comma" }); i++; continue; }
+    if (c === ".") { tokens.push({ type: "dot" });   i++; continue; }
     if (c === "(") { tokens.push({ type: "lparen" }); i++; continue; }
     if (c === ")") { tokens.push({ type: "rparen" }); i++; continue; }
     if (c === "!" && sql[i + 1] === "=") { tokens.push({ type: "op", value: "!=" }); i += 2; continue; }
@@ -598,6 +772,14 @@ function tokenize(sql) {
 }
 
 const AGG_FUNCS = new Set(["count", "sum", "avg", "min", "max"]);
+
+// Identifiers that are reserved keywords for clause boundaries — they CANNOT
+// be table aliases right after FROM / JOIN. Without this guard, `FROM shows
+// WHERE ...` would treat `where` as a table alias.
+const RESERVED_AFTER_FROM = new Set([
+  "where", "group", "having", "order", "limit",
+  "inner", "left", "right", "full", "outer", "join", "on", "as",
+]);
 
 function exprHasAgg(expr) {
   if (!expr) return false;
@@ -676,6 +858,24 @@ function parseQuery(sql) {
     return !!(t && t.type === "ident" && t.value === kw);
   };
 
+  // ----- column reference: ident or ident.ident (qualified) -----
+  // Returns { qualifier, name }. Qualifier is null for bare refs like `name`,
+  // and the table alias for refs like `s.name`. The bind step in executeQuery
+  // resolves these to actual row keys at execution time.
+  function parseColumnRef() {
+    const t = consume();
+    if (!t || t.type !== "ident") {
+      throw new Error(`Expected column name, got ${t ? (t.raw || t.value || t.type) : "end of input"}`);
+    }
+    if (peek() && peek().type === "dot") {
+      consume(); // dot
+      const t2 = consume();
+      if (!t2 || t2.type !== "ident") throw new Error("Expected column name after .");
+      return { qualifier: t.value, name: t2.value };
+    }
+    return { qualifier: null, name: t.value };
+  }
+
   // ----- expressions that yield a value (column refs, literals, function calls, CASE) -----
   function parseValueExpr() {
     const t = peek();
@@ -724,8 +924,14 @@ function parseQuery(sql) {
             consume();
             arg = { type: "star" };
           } else if (argT && argT.type === "ident") {
-            consume();
-            arg = { type: "col", name: argT.value };
+            // COUNT(DISTINCT <col>) — DISTINCT keyword is only valid inside COUNT
+            let isDistinct = false;
+            if (fname === "count" && argT.value === "distinct") {
+              consume(); // distinct
+              isDistinct = true;
+            }
+            const ref = parseColumnRef();
+            arg = { type: "col", name: ref.name, qualifier: ref.qualifier, distinct: isDistinct };
           } else {
             throw new Error(`Expected column or * in ${fname.toUpperCase()}(...)`);
           }
@@ -749,9 +955,9 @@ function parseQuery(sql) {
         throw new Error(`Unknown function: ${t.raw || t.value}`);
       }
 
-      // Plain column ref
-      consume();
-      return { type: "col", name: t.value };
+      // Plain column ref (parseColumnRef handles dotted refs like s.name)
+      const ref = parseColumnRef();
+      return { type: "col", name: ref.name, qualifier: ref.qualifier };
     }
 
     throw new Error(`Unexpected token in expression: ${t.raw || t.value || t.type}`);
@@ -789,6 +995,52 @@ function parseQuery(sql) {
   if (!tableTok || tableTok.type !== "ident") throw new Error("Expected table name");
   const table = consume().value;
 
+  // Optional table alias: `FROM shows s`. If the next token is a keyword
+  // (WHERE, JOIN, GROUP, etc.) the alias defaults to the table name itself
+  // so that `FROM shows` and `FROM shows shows` resolve refs the same way.
+  let fromAlias = table;
+  if (peek() && peek().type === "ident" && !RESERVED_AFTER_FROM.has(peek().value)) {
+    fromAlias = consume().value;
+  }
+
+  // Zero or more JOIN clauses. Layer 3 supports [INNER] JOIN and LEFT [OUTER] JOIN.
+  const joins = [];
+  while (true) {
+    let joinType = null;
+    if (isKw("inner") && isKw("join", 1)) {
+      consume(); consume();
+      joinType = "inner";
+    } else if (isKw("left")) {
+      consume();
+      if (isKw("outer")) consume();
+      if (!isKw("join")) throw new Error("Expected JOIN after LEFT");
+      consume();
+      joinType = "left";
+    } else if (isKw("join")) {
+      consume();
+      joinType = "inner";
+    } else {
+      break;
+    }
+    const jTableTok = peek();
+    if (!jTableTok || jTableTok.type !== "ident") throw new Error("Expected table name after JOIN");
+    const joinTable = consume().value;
+    let joinAlias = joinTable;
+    // Alias only if the next ident isn't ON / a clause keyword
+    if (peek() && peek().type === "ident" && !RESERVED_AFTER_FROM.has(peek().value) && peek().value !== "on") {
+      joinAlias = consume().value;
+    }
+    if (!isKw("on")) throw new Error("Expected ON after JOIN <table>");
+    consume();
+    const leftRef = parseColumnRef();
+    if (!peek() || peek().type !== "op" || peek().value !== "=") {
+      throw new Error("JOIN ON expects an equality condition (left.col = right.col)");
+    }
+    consume();
+    const rightRef = parseColumnRef();
+    joins.push({ type: joinType, table: joinTable, alias: joinAlias, leftRef, rightRef });
+  }
+
   let where = null;
   if (isKw("where")) {
     consume();
@@ -802,10 +1054,8 @@ function parseQuery(sql) {
     consume();
     groupBy = [];
     while (true) {
-      const colTok = peek();
-      if (!colTok || colTok.type !== "ident") throw new Error("Expected column name in GROUP BY");
-      consume();
-      groupBy.push(colTok.value);
+      const ref = parseColumnRef();
+      groupBy.push({ name: ref.name, qualifier: ref.qualifier });
       if (peek() && peek().type === "comma") { consume(); continue; }
       break;
     }
@@ -824,13 +1074,14 @@ function parseQuery(sql) {
     consume();
     orderBy = [];
     while (true) {
-      const colTok = peek();
-      if (!colTok || colTok.type !== "ident") throw new Error("Expected column name in ORDER BY");
-      consume();
+      // ORDER BY references the OUTPUT column. Qualifier (if any) is silently
+      // dropped — `ORDER BY s.name` and `ORDER BY name` both refer to the
+      // `name` column in the result, since SELECT items output bare names.
+      const ref = parseColumnRef();
       let direction = "asc";
       if (isKw("asc")) { consume(); }
       else if (isKw("desc")) { consume(); direction = "desc"; }
-      orderBy.push({ column: colTok.value, direction });
+      orderBy.push({ column: ref.name, direction });
       if (peek() && peek().type === "comma") { consume(); continue; }
       break;
     }
@@ -882,9 +1133,9 @@ function parseQuery(sql) {
       consume();
       return expr;
     }
-    const leftTok = consume();
-    if (!leftTok || leftTok.type !== "ident") throw new Error("Expected column name in condition");
-    const col = leftTok.value;
+    const ref = parseColumnRef();
+    const col = ref.name;
+    const qualifier = ref.qualifier;
     const next = peek();
     if (!next) throw new Error(`Expected condition after ${col}`);
 
@@ -894,13 +1145,13 @@ function parseQuery(sql) {
       if (peek() && peek().type === "ident" && peek().value === "not") { consume(); negate = true; }
       if (!peek() || peek().type !== "ident" || peek().value !== "null") throw new Error("Expected NULL");
       consume();
-      return { type: "is_null", column: col, negate };
+      return { type: "is_null", column: col, qualifier, negate };
     }
     if (next.type === "ident" && next.value === "like") {
       consume();
       const pat = consume();
       if (!pat || pat.type !== "string") throw new Error("LIKE expects a string pattern");
-      return { type: "like", column: col, pattern: pat.value };
+      return { type: "like", column: col, qualifier, pattern: pat.value };
     }
     if (next.type === "ident" && next.value === "between") {
       consume();
@@ -910,7 +1161,7 @@ function parseQuery(sql) {
       consume();
       const high = consume();
       if (!high || (high.type !== "number" && high.type !== "string")) throw new Error("BETWEEN expects a value");
-      return { type: "between", column: col, low: low.value, high: high.value };
+      return { type: "between", column: col, qualifier, low: low.value, high: high.value };
     }
     if ((next.type === "ident" && next.value === "in") ||
         (next.type === "ident" && next.value === "not" && peek(1) && peek(1).value === "in")) {
@@ -928,17 +1179,17 @@ function parseQuery(sql) {
       }
       if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after IN list");
       consume();
-      return { type: negate ? "not_in" : "in", column: col, values };
+      return { type: negate ? "not_in" : "in", column: col, qualifier, values };
     }
     if (next.type === "op") {
       consume();
       const right = consume();
       if (!right) throw new Error("Expected literal on right side of comparison");
       if (right.type === "ident" && right.value === "null") {
-        return { type: "compare", column: col, op: next.value, value: null };
+        return { type: "compare", column: col, qualifier, op: next.value, value: null };
       }
       if (right.type !== "number" && right.type !== "string") throw new Error("Expected literal on right side of comparison");
-      return { type: "compare", column: col, op: next.value, value: right.value };
+      return { type: "compare", column: col, qualifier, op: next.value, value: right.value };
     }
     throw new Error(`Unexpected token in condition: ${next.raw || next.value || next.type}`);
   }
@@ -1004,6 +1255,8 @@ function parseQuery(sql) {
     isStar,
     isAggregate,
     table,
+    fromAlias,
+    joins,
     where,
     groupBy,
     having,
@@ -1105,6 +1358,14 @@ function evalAggOnGroup(expr, groupRows) {
       const f = expr.func;
       if (f === "count") {
         if (expr.arg.type === "star") return groupRows.length;
+        if (expr.arg.distinct) {
+          const seen = new Set();
+          for (const r of groupRows) {
+            const v = r[expr.arg.name];
+            if (v != null) seen.add(v);
+          }
+          return seen.size;
+        }
         return groupRows.filter((r) => r[expr.arg.name] != null).length;
       }
       const colName = expr.arg.name;
@@ -1159,30 +1420,146 @@ function evalHaving(expr, groupRows) {
   }
 }
 
+// ----- bind: walk the parsed AST and rewrite every column reference (qualifier
+//       + bare name) into a final row-key string. For single-table queries the
+//       key is the bare name; for joined queries it's "alias.name" so it
+//       matches the prefixed keys of the joined row set.
+function bindAllColumns(parsed, bindCol) {
+  function walkWhere(e) {
+    if (!e) return;
+    switch (e.type) {
+      case "and": case "or": walkWhere(e.left); walkWhere(e.right); break;
+      case "not": walkWhere(e.expr); break;
+      case "compare": case "is_null": case "like":
+      case "in": case "not_in": case "between":
+        e.column = bindCol(e.qualifier, e.column);
+        e.qualifier = null;
+        break;
+      case "compare_expr": walkValue(e.left); break;
+    }
+  }
+  function walkValue(e) {
+    if (!e) return;
+    switch (e.type) {
+      case "literal": return;
+      case "col":
+        e.name = bindCol(e.qualifier, e.name);
+        e.qualifier = null;
+        return;
+      case "agg":
+        if (e.arg && e.arg.type === "col") {
+          e.arg.name = bindCol(e.arg.qualifier, e.arg.name);
+          e.arg.qualifier = null;
+        }
+        return;
+      case "func":
+        e.args.forEach(walkValue);
+        return;
+      case "case":
+        e.branches.forEach((b) => { walkWhere(b.when); walkValue(b.then); });
+        if (e.else) walkValue(e.else);
+        return;
+    }
+  }
+  if (parsed.where) walkWhere(parsed.where);
+  if (parsed.having) walkWhere(parsed.having);
+  for (const it of parsed.selectItems) walkValue(it.expr);
+  if (parsed.groupBy) {
+    parsed.groupBy = parsed.groupBy.map((g) => bindCol(g.qualifier, g.name));
+  }
+  for (const j of (parsed.joins || [])) {
+    j.leftRef.bound  = bindCol(j.leftRef.qualifier,  j.leftRef.name);
+    j.rightRef.bound = bindCol(j.rightRef.qualifier, j.rightRef.name);
+  }
+  // ORDER BY references output columns (aliases) — leave as bare names and let
+  // the outCols.includes() check validate them at result-shaping time.
+}
+
+// Build a single combined row set from FROM + JOINs. Every row has keys
+// prefixed by the table alias (e.g. "s.name", "e.title"). For LEFT JOIN
+// unmatched rows on the right, all right-side keys are set to null.
+function buildJoinedRows(parsed, tables) {
+  const prefix = (row, alias) => {
+    const out = {};
+    for (const k of Object.keys(row)) out[`${alias}.${k}`] = row[k];
+    return out;
+  };
+  let rows = (tables[parsed.table] || []).map((r) => prefix(r, parsed.fromAlias));
+  for (const j of parsed.joins) {
+    const rightRows = (tables[j.table] || []).map((r) => prefix(r, j.alias));
+    const rightCols = TABLE_COLUMN_ORDER[j.table] || (tables[j.table][0] ? Object.keys(tables[j.table][0]) : []);
+    const nullRight = {};
+    for (const c of rightCols) nullRight[`${j.alias}.${c}`] = null;
+
+    const next = [];
+    for (const lrow of rows) {
+      const lkey = lrow[j.leftRef.bound];
+      let matched = false;
+      if (lkey != null) {
+        for (const rrow of rightRows) {
+          if (rrow[j.rightRef.bound] === lkey) {
+            next.push({ ...lrow, ...rrow });
+            matched = true;
+          }
+        }
+      }
+      if (!matched && j.type === "left") {
+        next.push({ ...lrow, ...nullRight });
+      }
+    }
+    rows = next;
+  }
+  return rows;
+}
+
 function executeQuery(sql, tables) {
   const parsed = parseQuery(sql);
   const source = tables[parsed.table];
   if (!source) throw new Error(`Unknown table: ${parsed.table}`);
-
-  // Validate WHERE column refs against the source schema so a broken query like
-  // `WHERE cnt > 2` (where cnt is a SELECT alias) errors instead of silently
-  // returning zero rows. This is what challenge 2.7 (WHERE vs HAVING) relies on.
-  if (parsed.where && source.length) {
-    for (const c of collectWhereColumns(parsed.where)) {
-      if (!(c in source[0])) throw new Error(`Unknown column in WHERE: ${c}`);
-    }
+  for (const j of (parsed.joins || [])) {
+    if (!tables[j.table]) throw new Error(`Unknown table: ${j.table}`);
   }
 
-  let rows = source;
+  // Build the alias → columns scope used by bindCol below.
+  const isJoined = (parsed.joins || []).length > 0;
+  const aliases = [parsed.fromAlias, ...(parsed.joins || []).map((j) => j.alias)];
+  const tableNameByAlias = { [parsed.fromAlias]: parsed.table };
+  for (const j of (parsed.joins || [])) tableNameByAlias[j.alias] = j.table;
+  const columnsByAlias = {};
+  for (const a of aliases) {
+    const tname = tableNameByAlias[a];
+    columnsByAlias[a] =
+      TABLE_COLUMN_ORDER[tname] ||
+      (tables[tname] && tables[tname][0] ? Object.keys(tables[tname][0]) : []);
+  }
+
+  function bindCol(qualifier, name) {
+    if (qualifier) {
+      if (!aliases.includes(qualifier)) {
+        throw new Error(`Unknown table alias: ${qualifier}`);
+      }
+      if (!columnsByAlias[qualifier].includes(name)) {
+        throw new Error(`Unknown column: ${qualifier}.${name}`);
+      }
+      return isJoined ? `${qualifier}.${name}` : name;
+    }
+    const matches = aliases.filter((a) => columnsByAlias[a].includes(name));
+    if (matches.length === 0) throw new Error(`Unknown column: ${name}`);
+    if (matches.length > 1) {
+      throw new Error(`Ambiguous column reference "${name}" — qualify with an alias (e.g. ${matches[0]}.${name})`);
+    }
+    return isJoined ? `${matches[0]}.${name}` : name;
+  }
+
+  bindAllColumns(parsed, bindCol);
+
+  // Build the row set: single-table uses the source directly; joined queries
+  // produce a combined row set with prefixed column keys.
+  let rows = isJoined ? buildJoinedRows(parsed, tables) : source;
   if (parsed.where) rows = rows.filter((row) => evalExpr(parsed.where, row));
 
   // ---------- Aggregate / GROUP BY path ----------
   if (parsed.isAggregate) {
-    if (parsed.groupBy) {
-      for (const c of parsed.groupBy) {
-        if (source.length && !(c in source[0])) throw new Error(`Unknown column in GROUP BY: ${c}`);
-      }
-    }
     const groupSet = new Set(parsed.groupBy || []);
     for (const it of parsed.selectItems) {
       if (!exprValidInAggregateSelect(it.expr, groupSet)) {
@@ -1233,22 +1610,26 @@ function executeQuery(sql, tables) {
   // ---------- Non-aggregate path (Layer 1 shape) ----------
   let srcCols;
   if (parsed.isStar) {
-    srcCols = source.length ? Object.keys(source[0]) : [];
+    // SELECT * on joined rows would yield prefixed keys; we have no challenges
+    // exercising that, but supporting it keeps the engine consistent.
+    if (isJoined && rows.length) srcCols = Object.keys(rows[0]);
+    else srcCols = source.length ? Object.keys(source[0]) : [];
   } else {
     srcCols = parsed.selectItems.map((it) => {
       if (it.expr.type !== "col") {
         throw new Error(`Unsupported non-aggregate expression in SELECT: ${exprDefaultName(it.expr)}`);
       }
+      // After bindAllColumns, expr.name is the actual row key ("s.name" for
+      // joined queries, "name" for single-table).
       return it.expr.name;
     });
-    for (const c of srcCols) {
-      if (source.length && !(c in source[0])) throw new Error(`Unknown column: ${c}`);
-    }
   }
 
+  // outName was set at parse time from the BARE column name (or AS alias), so
+  // `SELECT s.name` outputs "name" rather than "s.name".
   const outCols = parsed.isStar
     ? srcCols.slice()
-    : parsed.selectItems.map((it, i) => it.alias || srcCols[i]);
+    : parsed.selectItems.map((it) => it.outName);
 
   let outRows = rows.map((row) => {
     const o = {};
@@ -2007,7 +2388,7 @@ function WhyPanel({ why, onNext, hasNext }) {
         )}
         {!hasNext && (
           <div className="text-[11px] text-stone-400 italic shrink-0">
-            End of Phase 1 — more veins ahead.
+            End of seeded content — more veins ahead.
           </div>
         )}
       </div>
@@ -3743,9 +4124,28 @@ export default function SqlForge() {
     }
   }, [challenge.targetSql]);
 
-  // For the "source" table panel we always show the full underlying table.
-  const sourceColumns = SHOW_COLUMN_ORDER;
-  const sourceRows = SHOWS_DATA;
+  // For challenges with a `tables` field (Layer 3+) we render multiple source
+  // tables side by side. The PICKER source (used by PREDICT's row selection)
+  // is either the explicitly named `predictSourceTable` or the first listed.
+  // Single-table challenges (Layer 1-2) fall through to the shows table.
+  const sourceTables = useMemo(() => {
+    if (challenge.tables && challenge.tables.length) {
+      const pickerName = challenge.predictSourceTable || challenge.tables[0];
+      return challenge.tables.map((name) => ({
+        name,
+        columns: TABLE_COLUMN_ORDER[name] || [],
+        rows: TABLES[name] || [],
+        isPicker: name === pickerName,
+      }));
+    }
+    return [{ name: "shows", columns: SHOW_COLUMN_ORDER, rows: SHOWS_DATA, isPicker: true }];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challenge.id]);
+
+  const pickerSource = sourceTables.find((t) => t.isPicker) || sourceTables[0];
+  const sourceColumns = pickerSource.columns;
+  const sourceRows = pickerSource.rows;
+  const isMultiSource = sourceTables.length > 1;
 
   // PREDICT: columns the user can pick that aren't source columns (e.g. "cnt"
   // computed via COUNT(*) AS cnt). They become editable text-input cells.
@@ -3831,7 +4231,10 @@ export default function SqlForge() {
         setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
         earnGemsForChallenge(challenge);
 
-        if (skipAnimations) {
+        // Phase 9A skips the animation for JOIN queries — the JOIN-specific
+        // animation lands in Phase 9B. Layer 1-2 queries still animate.
+        const hasJoin = (parsed.joins || []).length > 0;
+        if (skipAnimations || hasJoin) {
           setAnimationParsed(null);
           setAnimationPhase("idle");
         } else {
@@ -3965,7 +4368,10 @@ export default function SqlForge() {
       } else {
         try {
           const parsed = parseQuery(challenge.targetSql);
-          const first = computeFirstPhase(parsed, sourceColumns);
+          // JOIN animations land in Phase 9B — skip the animation for
+          // PREDICT challenges whose target query uses a JOIN.
+          const hasJoin = (parsed.joins || []).length > 0;
+          const first = hasJoin ? null : computeFirstPhase(parsed, sourceColumns);
           if (first) {
             setAnimationParsed(parsed);
             setAnimationPhase(first);
@@ -4110,11 +4516,12 @@ export default function SqlForge() {
   };
   const badge = BADGES[challenge.type] || BADGES.transform;
 
-  // Layer 1 keeps the warm-amber surface tint; Layer 2 deepens into cool blues
-  // to signal "we're underground now." Layer 3+ will follow.
+  // Layer 1 keeps the warm-amber surface tint; Layer 2 deepens into cool blues;
+  // Layer 3 brings two-tone cyan/teal — the crossroads where tunnels meet.
   const LAYER_BACKGROUNDS = {
     1: "radial-gradient(1200px 600px at 20% -10%, rgba(120, 53, 15, 0.15), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(8, 47, 73, 0.18), transparent 60%), linear-gradient(180deg, #0c0a09 0%, #1c1917 100%)",
     2: "radial-gradient(1200px 600px at 20% -10%, rgba(30, 64, 175, 0.22), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(14, 116, 144, 0.22), transparent 60%), linear-gradient(180deg, #0b1120 0%, #0f172a 100%)",
+    3: "radial-gradient(900px 500px at 0% 10%, rgba(20, 184, 166, 0.18), transparent 60%), radial-gradient(900px 500px at 100% 30%, rgba(168, 85, 247, 0.16), transparent 60%), linear-gradient(180deg, #082f49 0%, #0f172a 100%)",
   };
   const layerName = LAYERS[challenge.layer - 1]?.name || "Unknown";
 
@@ -4218,18 +4625,39 @@ export default function SqlForge() {
           {/* Source + Target/Builder side by side — skip for DIAGNOSE and TEACH-BACK (each has its own layout) */}
           {!isDiagnose && !isTeachBack && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <DataTable
-              title="shows"
-              columns={sourceColumns}
-              rows={sourceRows}
-              variant="source"
-              selectedRowIndices={isPredict ? builderState.rows : null}
-              onRowClick={
-                isPredict && !animating && status !== "correct"
-                  ? togglePredictSourceRow
-                  : null
-              }
-            />
+            {isMultiSource ? (
+              <div className="space-y-3">
+                {sourceTables.map((t) => (
+                  <DataTable
+                    key={t.name}
+                    title={t.name}
+                    columns={t.columns}
+                    rows={t.rows}
+                    variant="source"
+                    maxHeight="max-h-48"
+                    selectedRowIndices={isPredict && t.isPicker ? builderState.rows : null}
+                    onRowClick={
+                      isPredict && t.isPicker && !animating && status !== "correct"
+                        ? togglePredictSourceRow
+                        : null
+                    }
+                  />
+                ))}
+              </div>
+            ) : (
+              <DataTable
+                title={sourceTables[0].name}
+                columns={sourceTables[0].columns}
+                rows={sourceTables[0].rows}
+                variant="source"
+                selectedRowIndices={isPredict ? builderState.rows : null}
+                onRowClick={
+                  isPredict && !animating && status !== "correct"
+                    ? togglePredictSourceRow
+                    : null
+                }
+              />
+            )}
             {isPredict ? (
               <ResultBuilder
                 sourceColumns={sourceColumns}
