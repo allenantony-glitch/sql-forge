@@ -37,7 +37,8 @@ sql-forge/
     │   ├── challenges.js        — All challenge definitions (layers 1-3+)
     │   ├── layers.js            — LAYERS array
     │   ├── gems.js              — GEMS, GEM_BY_ID, GEM_LEVEL_*, SYNTAX_TEMPLATES, nextGemLevel()
-    │   └── operations.js        — OPERATIONS, pipeline validation, canonical rank
+    │   ├── operations.js        — OPERATIONS, pipeline validation, canonical rank
+    │   └── schema.js            — SCHEMA + RELATIONSHIPS for ER diagram (real_world challenges)
     │
     ├── engine/
     │   ├── tokenizer.js         — tokenize()
@@ -61,7 +62,10 @@ sql-forge/
     │       ├── PredictChallenge.jsx  — PredictQueryCard, ResultBuilder
     │       ├── WrongToolHint.jsx     — Hint panel for wrong-tool challenges
     │       ├── DiagnoseChallenge.jsx — DiagnoseOption + DiagnoseChallenge
-    │       └── TeachBackChallenge.jsx — Teach-back with client-side validation
+    │       ├── TeachBackChallenge.jsx — Teach-back with client-side validation
+    │       ├── ManyRoadsChallenge.jsx — Three-tunnel UI, tradeoff card, write-from-memory editor
+    │       ├── ERDiagram.jsx          — Visual schema (table cards + SVG FK arrows) for real_world
+    │       └── RealWorldChallenge.jsx — Question + ER diagram + table-pick + editor + hint-only wrong
     │
     ├── hooks/
     │   └── usePersistedState.js — localStorage save/load with error handling
@@ -95,7 +99,7 @@ sql-forge/
 - Output directory: `dist`
 
 ## Build Phases
-Current phase: Phase 12
+Current phase: Phase 13
 
 Completed:
 - Phase 1: Core shell + Layer 1 TRANSFORM challenges ✓
@@ -110,9 +114,9 @@ Completed:
 - Phase 9B: JOIN animations + FADED TARGET ✓
 - Phase 10: Restructure to Vite + React, deploy on Vercel ✓
 - Phase 11: MANY ROADS challenge type (2 challenges in Layer 3) ✓
+- Phase 12: REAL WORLD challenge type + ER diagram component (2 challenges in Layer 3) ✓
 
 Remaining:
-- Phase 12: REAL WORLD challenge type + ER diagram component (2 challenges in Layer 3)
 - Phase 13: Layer 4 SQL engine — subqueries in WHERE/FROM/SELECT, EXISTS, NOT IN/NOT EXISTS
 - Phase 14: Layer 4 challenges (6-8 challenges) + UNION/INTERSECT/EXCEPT engine support
 - Phase 15: Layer 5 SQL engine — window functions (RANK, DENSE_RANK, ROW_NUMBER, LAG, LEAD, PARTITION BY, frame clauses)

@@ -17,6 +17,7 @@ export const GEMS = [
   { id: "teacher",    name: "Teacher",    color: "#fafafa", shape: "circle",    concept: "Explaining" },
   { id: "bridge",     name: "Bridge",     color: "#06b6d4", shape: "bridge",    concept: "JOIN" },
   { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding" },
+  { id: "map",        name: "Map",        color: "#b45309", shape: "rectangle", concept: "Real-world translation" },
 ];
 
 export const GEM_BY_ID = Object.fromEntries(GEMS.map((g) => [g.id, g]));
@@ -59,6 +60,6 @@ export function nextGemLevel(prev, challenge) {
   if (level < 1) level = 1;
   if (challenge.type === "transform" && level < 2) level = 2;
   if ((challenge.concepts?.length || 0) >= 3 && level < 3) level = 3;
-  if ((challenge.type === "wrong_tool" || challenge.type === "diagnose" || challenge.type === "predict" || challenge.type === "teach_back") && level < 4) level = 4;
+  if ((challenge.type === "wrong_tool" || challenge.type === "diagnose" || challenge.type === "predict" || challenge.type === "teach_back" || challenge.type === "real_world") && level < 4) level = 4;
   return level;
 }
