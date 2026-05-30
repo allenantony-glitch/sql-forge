@@ -22,6 +22,7 @@ import { WrongToolHint } from './components/challenges/WrongToolHint';
 import { DiagnoseChallenge } from './components/challenges/DiagnoseChallenge';
 import { TeachBackChallenge } from './components/challenges/TeachBackChallenge';
 import { ManyRoadsChallenge } from './components/challenges/ManyRoadsChallenge';
+import { RealWorldChallenge } from './components/challenges/RealWorldChallenge';
 import { saveState, loadState } from './hooks/usePersistedState';
 
 export default function App() {
@@ -122,6 +123,7 @@ export default function App() {
   const isDiagnose = challenge.type === "diagnose";
   const isTeachBack = challenge.type === "teach_back";
   const isManyRoads = challenge.type === "many_roads";
+  const isRealWorld = challenge.type === "real_world";
   const pipeline = pipelines[challenge.id] || [];
   const pipelineFilled = pipeline.filter(Boolean);
   const pipelineValidation = useMemo(() => validatePipeline(pipelineFilled), [pipelineFilled]);
@@ -527,6 +529,7 @@ export default function App() {
     diagnose: { icon: "🩺", label: "Diagnose the Bug" },
     teach_back: { icon: "🎓", label: "Explain It" },
     many_roads: { icon: "🔀", label: "Explore Alternatives" },
+    real_world: { icon: "🗺️", label: "Real World Challenge" },
   };
   const badge = BADGES[challenge.type] || BADGES.transform;
 
@@ -552,6 +555,16 @@ export default function App() {
     setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
     earnGemsForChallenge(challenge);
     setManyRoadsHistory((h) => ({ ...h, [challenge.id]: writtenApproachId }));
+  };
+
+  const handleRealWorldSolve = ({ correct }) => {
+    if (correct) {
+      setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
+      setCompleted((c) => (c.includes(challenge.id) ? c : [...c, challenge.id]));
+      earnGemsForChallenge(challenge);
+    } else {
+      setStatusById((s) => ({ ...s, [challenge.id]: "wrong" }));
+    }
   };
 
   // Layer 1 keeps the warm-amber surface tint; Layer 2 deepens into cool blues;
@@ -649,8 +662,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Source + Target/Builder side by side — skip for DIAGNOSE, TEACH-BACK, and MANY ROADS (each has its own layout) */}
-          {!isDiagnose && !isTeachBack && !isManyRoads && (
+          {/* Source + Target/Builder side by side — skip for DIAGNOSE, TEACH-BACK, MANY ROADS, REAL WORLD (each has its own layout) */}
+          {!isDiagnose && !isTeachBack && !isManyRoads && !isRealWorld && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
             {isMultiSource ? (
               <div className="space-y-3">
@@ -751,8 +764,23 @@ export default function App() {
             />
           )}
 
-          {/* Editor — hidden in predict, diagnose, teach-back, and many-roads modes (each has its own answer surface) */}
-          {!isPredict && !isDiagnose && !isTeachBack && !isManyRoads && (
+          {/* REAL WORLD — owns its own internal flow (ER diagram, table selection, editor, hints, result) */}
+          {isRealWorld && (
+            <RealWorldChallenge
+              challenge={challenge}
+              query={query}
+              onQueryChange={(v) => setQueries((q) => ({ ...q, [challenge.id]: v }))}
+              status={status}
+              skipAnimations={skipAnimations}
+              gems={gems}
+              onSolve={handleRealWorldSolve}
+              onNext={handleNext}
+              hasNext={hasNext}
+            />
+          )}
+
+          {/* Editor — hidden in predict, diagnose, teach-back, many-roads, and real-world modes (each has its own answer surface) */}
+          {!isPredict && !isDiagnose && !isTeachBack && !isManyRoads && !isRealWorld && (
             <div className="mb-4 space-y-2" ref={editorAnchorRef}>
               {editorLocked ? (
                 <div className="rounded-lg border border-dashed border-stone-800 bg-stone-950/40 p-6 text-center text-xs text-stone-500 italic">
@@ -789,8 +817,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Animation stage — visible only when we kicked one off for this submission */}
-          {status === "correct" && animationParsed && animationPhase !== "idle" && (() => {
+          {/* Animation stage — visible only when we kicked one off for this submission. Real-world owns its own animation. */}
+          {!isRealWorld && status === "correct" && animationParsed && animationPhase !== "idle" && (() => {
             // For JOIN animations, the picker source (e.g. reviews in a
             // PREDICT challenge) may differ from the FROM table the animation
             // needs (shows). Re-derive from parsed.table so JOIN tinting
@@ -820,15 +848,15 @@ export default function App() {
             <WrongToolHint message={matchingHint.message} />
           )}
 
-          {/* Feedback — teach-back and many-roads render their own success panels inside the component */}
-          {status === "correct" && !animating && !isTeachBack && !isManyRoads && (
+          {/* Feedback — teach-back, many-roads, and real-world render their own success panels inside the component */}
+          {status === "correct" && !animating && !isTeachBack && !isManyRoads && !isRealWorld && (
             <WhyPanel
               why={isDiagnose ? challenge.explanation : challenge.why}
               onNext={handleNext}
               hasNext={hasNext}
             />
           )}
-          {status === "wrong" && !isPredict && !isDiagnose && !isTeachBack && !isManyRoads && (
+          {status === "wrong" && !isPredict && !isDiagnose && !isTeachBack && !isManyRoads && !isRealWorld && (
             <ResultComparison actual={actualByCurrent} expected={expectedResult} errorMessage={errorByCurrent} />
           )}
         </main>
