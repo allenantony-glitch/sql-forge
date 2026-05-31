@@ -29,6 +29,7 @@ export function exprDefaultName(expr) {
   if (expr.type === "func") return `${expr.name}(...)`;
   if (expr.type === "case") return "case";
   if (expr.type === "literal") return String(expr.value);
+  if (expr.type === "select_subquery") return "subquery";
   return "expr";
 }
 
@@ -48,7 +49,14 @@ export function collectWhereColumns(expr) {
       case "in":
       case "not_in":
       case "between":
+      case "in_subquery":
+      case "not_in_subquery":
+      case "compare_subquery":
         cols.add(e.column); break;
+      case "compare_cols":
+        cols.add(e.left.name);
+        cols.add(e.right.name);
+        break;
     }
   }
   walk(expr);
@@ -65,6 +73,7 @@ export function exprValidInAggregateSelect(expr, groupSet) {
     return expr.branches.every((b) => exprValidInAggregateSelect(b.then, groupSet))
       && (!expr.else || exprValidInAggregateSelect(expr.else, groupSet));
   }
+  if (expr.type === "select_subquery") return true;
   return false;
 }
 
@@ -87,10 +96,13 @@ export function parseQuery(sql) {
     return !!(t && t.type === "ident" && t.value === kw);
   };
 
+  // Are we looking at `( SELECT ...` at the given offset?
+  const isSubqueryStart = (offset = 0) =>
+    !!(peek(offset) && peek(offset).type === "lparen" &&
+       peek(offset + 1) && peek(offset + 1).type === "ident" &&
+       peek(offset + 1).value === "select");
+
   // ----- column reference: ident or ident.ident (qualified) -----
-  // Returns { qualifier, name }. Qualifier is null for bare refs like `name`,
-  // and the table alias for refs like `s.name`. The bind step in executeQuery
-  // resolves these to actual row keys at execution time.
   function parseColumnRef() {
     const t = consume();
     if (!t || t.type !== "ident") {
@@ -105,8 +117,17 @@ export function parseQuery(sql) {
     return { qualifier: null, name: t.value };
   }
 
-  // ----- expressions that yield a value (column refs, literals, function calls, CASE) -----
+  // ----- expressions that yield a value (column refs, literals, function calls, CASE, scalar subqueries) -----
   function parseValueExpr() {
+    // (SELECT ...) — scalar subquery
+    if (isSubqueryStart()) {
+      consume(); // (
+      const sub = parseSelectStatement();
+      if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after subquery");
+      consume();
+      return { type: "select_subquery", subquery: sub };
+    }
+
     const t = peek();
     if (!t) throw new Error("Expected expression");
 
@@ -196,142 +217,6 @@ export function parseQuery(sql) {
     throw new Error(`Unexpected token in expression: ${t.raw || t.value || t.type}`);
   }
 
-  expectKeyword("select");
-
-  let distinct = false;
-  if (isKw("distinct")) { consume(); distinct = true; }
-
-  const selectItems = [];
-  let isStar = false;
-  if (peek() && peek().type === "star") {
-    consume();
-    isStar = true;
-  } else {
-    while (true) {
-      const expr = parseValueExpr();
-      let alias = null;
-      if (isKw("as")) {
-        consume();
-        const aliasTok = peek();
-        if (!aliasTok || aliasTok.type !== "ident") throw new Error("Expected alias after AS");
-        consume();
-        alias = aliasTok.value;
-      }
-      selectItems.push({ expr, alias, outName: alias || exprDefaultName(expr) });
-      if (peek() && peek().type === "comma") { consume(); continue; }
-      break;
-    }
-  }
-
-  expectKeyword("from");
-  const tableTok = peek();
-  if (!tableTok || tableTok.type !== "ident") throw new Error("Expected table name");
-  const table = consume().value;
-
-  // Optional table alias: `FROM shows s`. If the next token is a keyword
-  // (WHERE, JOIN, GROUP, etc.) the alias defaults to the table name itself
-  // so that `FROM shows` and `FROM shows shows` resolve refs the same way.
-  let fromAlias = table;
-  if (peek() && peek().type === "ident" && !RESERVED_AFTER_FROM.has(peek().value)) {
-    fromAlias = consume().value;
-  }
-
-  // Zero or more JOIN clauses. Layer 3 supports [INNER] JOIN and LEFT [OUTER] JOIN.
-  const joins = [];
-  while (true) {
-    let joinType = null;
-    if (isKw("inner") && isKw("join", 1)) {
-      consume(); consume();
-      joinType = "inner";
-    } else if (isKw("left")) {
-      consume();
-      if (isKw("outer")) consume();
-      if (!isKw("join")) throw new Error("Expected JOIN after LEFT");
-      consume();
-      joinType = "left";
-    } else if (isKw("join")) {
-      consume();
-      joinType = "inner";
-    } else {
-      break;
-    }
-    const jTableTok = peek();
-    if (!jTableTok || jTableTok.type !== "ident") throw new Error("Expected table name after JOIN");
-    const joinTable = consume().value;
-    let joinAlias = joinTable;
-    // Alias only if the next ident isn't ON / a clause keyword
-    if (peek() && peek().type === "ident" && !RESERVED_AFTER_FROM.has(peek().value) && peek().value !== "on") {
-      joinAlias = consume().value;
-    }
-    if (!isKw("on")) throw new Error("Expected ON after JOIN <table>");
-    consume();
-    const leftRef = parseColumnRef();
-    if (!peek() || peek().type !== "op" || peek().value !== "=") {
-      throw new Error("JOIN ON expects an equality condition (left.col = right.col)");
-    }
-    consume();
-    const rightRef = parseColumnRef();
-    joins.push({ type: joinType, table: joinTable, alias: joinAlias, leftRef, rightRef });
-  }
-
-  let where = null;
-  if (isKw("where")) {
-    consume();
-    where = parseOr();
-  }
-
-  let groupBy = null;
-  if (isKw("group")) {
-    consume();
-    if (!isKw("by")) throw new Error("Expected BY after GROUP");
-    consume();
-    groupBy = [];
-    while (true) {
-      const ref = parseColumnRef();
-      groupBy.push({ name: ref.name, qualifier: ref.qualifier });
-      if (peek() && peek().type === "comma") { consume(); continue; }
-      break;
-    }
-  }
-
-  let having = null;
-  if (isKw("having")) {
-    consume();
-    having = parseHavingOr();
-  }
-
-  let orderBy = null;
-  if (isKw("order")) {
-    consume();
-    if (!isKw("by")) throw new Error("Expected BY after ORDER");
-    consume();
-    orderBy = [];
-    while (true) {
-      // ORDER BY references the OUTPUT column. Qualifier (if any) is silently
-      // dropped — `ORDER BY s.name` and `ORDER BY name` both refer to the
-      // `name` column in the result, since SELECT items output bare names.
-      const ref = parseColumnRef();
-      let direction = "asc";
-      if (isKw("asc")) { consume(); }
-      else if (isKw("desc")) { consume(); direction = "desc"; }
-      orderBy.push({ column: ref.name, direction });
-      if (peek() && peek().type === "comma") { consume(); continue; }
-      break;
-    }
-  }
-
-  let limit = null;
-  if (isKw("limit")) {
-    consume();
-    const numTok = peek();
-    if (!numTok || numTok.type !== "number") throw new Error("LIMIT expects a number");
-    consume();
-    if (numTok.value < 0) throw new Error("LIMIT must be non-negative");
-    limit = Math.floor(numTok.value);
-  }
-
-  if (peek()) throw new Error(`Unexpected token after query: ${peek().raw || peek().value || peek().type}`);
-
   // ----- WHERE boolean expression -----
   function parseOr() {
     let left = parseAnd();
@@ -359,6 +244,17 @@ export function parseQuery(sql) {
     return parseCondition();
   }
   function parseCondition() {
+    // EXISTS (SELECT ...) — no column before it
+    if (isKw("exists")) {
+      consume();
+      if (!peek() || peek().type !== "lparen") throw new Error("Expected ( after EXISTS");
+      consume();
+      const sub = parseSelectStatement();
+      if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after EXISTS subquery");
+      consume();
+      return { type: "exists", subquery: sub };
+    }
+
     if (peek() && peek().type === "lparen") {
       consume();
       const expr = parseOr();
@@ -403,6 +299,13 @@ export function parseQuery(sql) {
       consume(); // in
       if (!peek() || peek().type !== "lparen") throw new Error("Expected ( after IN");
       consume();
+      // Subquery or literal list?
+      if (peek() && peek().type === "ident" && peek().value === "select") {
+        const sub = parseSelectStatement();
+        if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after IN subquery");
+        consume();
+        return { type: negate ? "not_in_subquery" : "in_subquery", column: col, qualifier, subquery: sub };
+      }
       const values = [];
       while (peek() && peek().type !== "rparen") {
         const t = consume();
@@ -416,13 +319,35 @@ export function parseQuery(sql) {
     }
     if (next.type === "op") {
       consume();
-      const right = consume();
-      if (!right) throw new Error("Expected literal on right side of comparison");
-      if (right.type === "ident" && right.value === "null") {
-        return { type: "compare", column: col, qualifier, op: next.value, value: null };
+      // Scalar subquery on right side?
+      if (isSubqueryStart()) {
+        consume(); // (
+        const sub = parseSelectStatement();
+        if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after subquery");
+        consume();
+        return { type: "compare_subquery", column: col, qualifier, op: next.value, subquery: sub };
       }
-      if (right.type !== "number" && right.type !== "string") throw new Error("Expected literal on right side of comparison");
-      return { type: "compare", column: col, qualifier, op: next.value, value: right.value };
+      const rt = peek();
+      if (!rt) throw new Error("Expected value on right side of comparison");
+      if (rt.type === "number" || rt.type === "string") {
+        consume();
+        return { type: "compare", column: col, qualifier, op: next.value, value: rt.value };
+      }
+      if (rt.type === "ident") {
+        if (rt.value === "null") {
+          consume();
+          return { type: "compare", column: col, qualifier, op: next.value, value: null };
+        }
+        // Column-to-column comparison (e.g. correlated subquery `r.show_id = s.id`)
+        const rightRef = parseColumnRef();
+        return {
+          type: "compare_cols",
+          left: { qualifier, name: col },
+          op: next.value,
+          right: rightRef,
+        };
+      }
+      throw new Error("Expected value on right side of comparison");
     }
     throw new Error(`Unexpected token in condition: ${next.raw || next.value || next.type}`);
   }
@@ -443,7 +368,7 @@ export function parseQuery(sql) {
     return parseHavingCondition();
   }
   function parseHavingCondition() {
-    if (peek() && peek().type === "lparen") {
+    if (peek() && peek().type === "lparen" && !isSubqueryStart()) {
       consume();
       const expr = parseHavingOr();
       if (!peek() || peek().type !== "rparen") throw new Error("Expected )");
@@ -465,36 +390,183 @@ export function parseQuery(sql) {
     return { type: "compare_expr", left, op: opTok.value, value: right.value };
   }
 
-  // ----- back-compat: when the query is fully simple (column refs only), produce
-  //       the legacy `columns` / `aliases` shape so the existing animation path
-  //       and tests keep working unchanged. Aggregate / starless paths use selectItems.
-  const isAggregate = (groupBy && groupBy.length > 0) || selectItems.some((it) => exprHasAgg(it.expr));
+  // ----- one SELECT statement; recursive so it can also parse subqueries -----
+  function parseSelectStatement() {
+    expectKeyword("select");
 
-  let legacyColumns;
-  const legacyAliases = {};
-  if (isStar) {
-    legacyColumns = ["*"];
-  } else if (!isAggregate && selectItems.every((it) => it.expr.type === "col")) {
-    legacyColumns = selectItems.map((it) => it.expr.name);
-    for (const it of selectItems) if (it.alias) legacyAliases[it.expr.name] = it.alias;
-  } else {
-    legacyColumns = selectItems.map((it) => it.outName);
+    let distinct = false;
+    if (isKw("distinct")) { consume(); distinct = true; }
+
+    const selectItems = [];
+    let isStar = false;
+    if (peek() && peek().type === "star") {
+      consume();
+      isStar = true;
+    } else {
+      while (true) {
+        const expr = parseValueExpr();
+        let alias = null;
+        if (isKw("as")) {
+          consume();
+          const aliasTok = peek();
+          if (!aliasTok || aliasTok.type !== "ident") throw new Error("Expected alias after AS");
+          consume();
+          alias = aliasTok.value;
+        }
+        selectItems.push({ expr, alias, outName: alias || exprDefaultName(expr) });
+        if (peek() && peek().type === "comma") { consume(); continue; }
+        break;
+      }
+    }
+
+    expectKeyword("from");
+
+    // FROM <table> [alias]   OR   FROM ( SELECT ... ) [AS] alias
+    let table, fromAlias, derivedTable = null;
+    if (peek() && peek().type === "lparen") {
+      consume(); // (
+      derivedTable = parseSelectStatement();
+      if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after derived table");
+      consume();
+      if (isKw("as")) consume();
+      const aliasTok = peek();
+      if (!aliasTok || aliasTok.type !== "ident") throw new Error("Derived table must have an alias");
+      consume();
+      fromAlias = aliasTok.value;
+      table = fromAlias; // virtual table name = alias
+    } else {
+      const tableTok = peek();
+      if (!tableTok || tableTok.type !== "ident") throw new Error("Expected table name");
+      table = consume().value;
+      fromAlias = table;
+      if (peek() && peek().type === "ident" && !RESERVED_AFTER_FROM.has(peek().value)) {
+        fromAlias = consume().value;
+      }
+    }
+
+    // Zero or more JOIN clauses. Layer 3 supports [INNER] JOIN and LEFT [OUTER] JOIN.
+    const joins = [];
+    while (true) {
+      let joinType = null;
+      if (isKw("inner") && isKw("join", 1)) {
+        consume(); consume();
+        joinType = "inner";
+      } else if (isKw("left")) {
+        consume();
+        if (isKw("outer")) consume();
+        if (!isKw("join")) throw new Error("Expected JOIN after LEFT");
+        consume();
+        joinType = "left";
+      } else if (isKw("join")) {
+        consume();
+        joinType = "inner";
+      } else {
+        break;
+      }
+      const jTableTok = peek();
+      if (!jTableTok || jTableTok.type !== "ident") throw new Error("Expected table name after JOIN");
+      const joinTable = consume().value;
+      let joinAlias = joinTable;
+      if (peek() && peek().type === "ident" && !RESERVED_AFTER_FROM.has(peek().value) && peek().value !== "on") {
+        joinAlias = consume().value;
+      }
+      if (!isKw("on")) throw new Error("Expected ON after JOIN <table>");
+      consume();
+      const leftRef = parseColumnRef();
+      if (!peek() || peek().type !== "op" || peek().value !== "=") {
+        throw new Error("JOIN ON expects an equality condition (left.col = right.col)");
+      }
+      consume();
+      const rightRef = parseColumnRef();
+      joins.push({ type: joinType, table: joinTable, alias: joinAlias, leftRef, rightRef });
+    }
+
+    let where = null;
+    if (isKw("where")) {
+      consume();
+      where = parseOr();
+    }
+
+    let groupBy = null;
+    if (isKw("group")) {
+      consume();
+      if (!isKw("by")) throw new Error("Expected BY after GROUP");
+      consume();
+      groupBy = [];
+      while (true) {
+        const ref = parseColumnRef();
+        groupBy.push({ name: ref.name, qualifier: ref.qualifier });
+        if (peek() && peek().type === "comma") { consume(); continue; }
+        break;
+      }
+    }
+
+    let having = null;
+    if (isKw("having")) {
+      consume();
+      having = parseHavingOr();
+    }
+
+    let orderBy = null;
+    if (isKw("order")) {
+      consume();
+      if (!isKw("by")) throw new Error("Expected BY after ORDER");
+      consume();
+      orderBy = [];
+      while (true) {
+        const ref = parseColumnRef();
+        let direction = "asc";
+        if (isKw("asc")) { consume(); }
+        else if (isKw("desc")) { consume(); direction = "desc"; }
+        orderBy.push({ column: ref.name, direction });
+        if (peek() && peek().type === "comma") { consume(); continue; }
+        break;
+      }
+    }
+
+    let limit = null;
+    if (isKw("limit")) {
+      consume();
+      const numTok = peek();
+      if (!numTok || numTok.type !== "number") throw new Error("LIMIT expects a number");
+      consume();
+      if (numTok.value < 0) throw new Error("LIMIT must be non-negative");
+      limit = Math.floor(numTok.value);
+    }
+
+    const isAggregate = (groupBy && groupBy.length > 0) || selectItems.some((it) => exprHasAgg(it.expr));
+
+    let legacyColumns;
+    const legacyAliases = {};
+    if (isStar) {
+      legacyColumns = ["*"];
+    } else if (!isAggregate && selectItems.every((it) => it.expr.type === "col")) {
+      legacyColumns = selectItems.map((it) => it.expr.name);
+      for (const it of selectItems) if (it.alias) legacyAliases[it.expr.name] = it.alias;
+    } else {
+      legacyColumns = selectItems.map((it) => it.outName);
+    }
+
+    return {
+      columns: legacyColumns,
+      aliases: legacyAliases,
+      selectItems,
+      isStar,
+      isAggregate,
+      table,
+      fromAlias,
+      derivedTable,
+      joins,
+      where,
+      groupBy,
+      having,
+      orderBy,
+      limit,
+      distinct,
+    };
   }
 
-  return {
-    columns: legacyColumns,
-    aliases: legacyAliases,
-    selectItems,
-    isStar,
-    isAggregate,
-    table,
-    fromAlias,
-    joins,
-    where,
-    groupBy,
-    having,
-    orderBy,
-    limit,
-    distinct,
-  };
+  const result = parseSelectStatement();
+  if (peek()) throw new Error(`Unexpected token after query: ${peek().raw || peek().value || peek().type}`);
+  return result;
 }
