@@ -116,7 +116,66 @@ export function evalExpr(expr, row, ctx = null) {
       const v = row[expr.column];
       return compareScalar(v, expr.op, subVal);
     }
+    case "compare_value_expr": {
+      const v = evalValueExpr(expr.left, row, ctx);
+      return compareScalar(v, expr.op, expr.value);
+    }
     default: return false;
+  }
+}
+
+// Apply a scalar/date/string function given the already-evaluated argument
+// values. Shared between evalValueExpr (per-row) and evalAggOnGroup (group-key
+// exprs evaluated on the first row of a group).
+function applyScalarFunc(name, vals) {
+  switch (name) {
+    case "round": {
+      const [v, d] = vals;
+      if (v == null) return null;
+      return Number(Number(v).toFixed(d));
+    }
+    case "upper":  return typeof vals[0] === "string" ? vals[0].toUpperCase() : vals[0];
+    case "lower":  return typeof vals[0] === "string" ? vals[0].toLowerCase() : vals[0];
+    case "length": return typeof vals[0] === "string" ? vals[0].length : (vals[0] == null ? null : String(vals[0]).length);
+    case "trim":   return typeof vals[0] === "string" ? vals[0].trim() : vals[0];
+    case "substring": {
+      const [str, start, len] = vals;
+      if (typeof str !== "string" || start == null) return null;
+      const s = Math.floor(start) - 1;
+      return len != null ? str.substring(s, s + Math.floor(len)) : str.substring(s);
+    }
+    case "concat":
+      return vals.map((v) => (v == null ? "" : String(v))).join("");
+    case "replace": {
+      const [str, from, to] = vals;
+      if (typeof str !== "string" || from == null) return null;
+      return str.split(String(from)).join(to == null ? "" : String(to));
+    }
+    case "split_part": {
+      const [str, delim, part] = vals;
+      if (typeof str !== "string" || !delim || part == null) return null;
+      const parts = str.split(String(delim));
+      return part >= 1 && part <= parts.length ? parts[Math.floor(part) - 1].trim() : "";
+    }
+    case "coalesce": {
+      for (const v of vals) if (v != null) return v;
+      return null;
+    }
+    case "extract": {
+      const [part, dateVal] = vals;
+      if (dateVal == null) return null;
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return null;
+      switch (part) {
+        case "year":    return d.getUTCFullYear();
+        case "month":   return d.getUTCMonth() + 1;
+        case "quarter": return Math.floor(d.getUTCMonth() / 3) + 1;
+        case "day":     return d.getUTCDate();
+        default: throw new Error(`Unknown EXTRACT part: ${part}`);
+      }
+    }
+    default:
+      throw new Error(`Unknown function: ${name}`);
   }
 }
 
@@ -125,14 +184,10 @@ export function evalValueExpr(expr, row, ctx = null) {
   switch (expr.type) {
     case "literal": return expr.value;
     case "col":     return row[expr.name];
-    case "func":
-      if (expr.name === "round") {
-        const v = evalValueExpr(expr.args[0], row, ctx);
-        const d = evalValueExpr(expr.args[1], row, ctx);
-        if (v == null) return null;
-        return Number(Number(v).toFixed(d));
-      }
-      throw new Error(`Unknown function: ${expr.name}`);
+    case "func": {
+      const vals = expr.args.map((a) => evalValueExpr(a, row, ctx));
+      return applyScalarFunc(expr.name, vals);
+    }
     case "case":
       for (const b of expr.branches) {
         if (evalExpr(b.when, row, ctx)) return evalValueExpr(b.then, row, ctx);
@@ -188,14 +243,10 @@ export function evalAggOnGroup(expr, groupRows, ctx = null) {
       if (f === "max") return vals.reduce((a, b) => (b > a ? b : a));
       throw new Error(`Unknown aggregate: ${f}`);
     }
-    case "func":
-      if (expr.name === "round") {
-        const v = evalAggOnGroup(expr.args[0], groupRows, ctx);
-        const d = evalAggOnGroup(expr.args[1], groupRows, ctx);
-        if (v == null) return null;
-        return Number(Number(v).toFixed(d));
-      }
-      throw new Error(`Unknown function: ${expr.name}`);
+    case "func": {
+      const vals = expr.args.map((a) => evalAggOnGroup(a, groupRows, ctx));
+      return applyScalarFunc(expr.name, vals);
+    }
     case "case":
       for (const b of expr.branches) {
         if (groupRows.length > 0 && evalExpr(b.when, groupRows[0], ctx)) {
@@ -242,6 +293,9 @@ function tableColumnsFor(parsed, tables, alias) {
     ? parsed.table
     : (parsed.joins.find((j) => j.alias === alias) || {}).table;
   if (!tname) return [];
+  // CTE virtual tables carry their column order on the rows array itself
+  // (rows.__columns__), so lookups work even when the CTE produced 0 rows.
+  if (tables[tname] && tables[tname].__columns__) return tables[tname].__columns__;
   return TABLE_COLUMN_ORDER[tname]
     || (tables[tname] && tables[tname][0] ? Object.keys(tables[tname][0]) : []);
 }
@@ -340,6 +394,7 @@ export function bindParsed(parsed, tables, outerScope = null) {
         bindParsed(e.subquery, tables, scope);
         return;
       case "compare_expr": walkValue(e.left); return;
+      case "compare_value_expr": walkValue(e.left); return;
     }
   }
 
@@ -396,16 +451,81 @@ export function bindParsed(parsed, tables, outerScope = null) {
 
   if (parsed.where) walkWhere(parsed.where);
   if (parsed.having) walkWhere(parsed.having);
-  for (const it of (parsed.selectItems || [])) walkValue(it.expr);
+
+  // Bind GROUP BY expressions first so we can rewrite matching SELECT items
+  // to reference the synthetic stash keys we assign for non-column exprs.
   if (parsed.groupBy) {
-    parsed.groupBy = parsed.groupBy.map((g) => bindCol(g.qualifier, g.name));
+    for (const g of parsed.groupBy) walkValue(g);
+    parsed._groupKeys = [];
+    const rewriteMap = new Map();
+    for (let i = 0; i < parsed.groupBy.length; i++) {
+      const g = parsed.groupBy[i];
+      if (g.type === "col") {
+        parsed._groupKeys.push(g.name);
+      } else {
+        const synth = `__group_${i}__`;
+        parsed._groupKeys.push(synth);
+        rewriteMap.set(exprKey(g), synth);
+      }
+    }
+    parsed._groupRewrite = rewriteMap;
   }
+
+  for (const it of (parsed.selectItems || [])) walkValue(it.expr);
+
+  // After SELECT binding, swap any sub-expression that matches a GROUP BY
+  // expression (by structural equality) for a col-ref to its synthetic stash
+  // key — this lets evalAggOnGroup read the value from the first row of the
+  // group without re-evaluating the (possibly expensive) expression.
+  if (parsed._groupRewrite && parsed._groupRewrite.size > 0) {
+    for (const it of (parsed.selectItems || [])) {
+      it.expr = rewriteForGroup(it.expr, parsed._groupRewrite);
+    }
+  }
+
   for (const j of (parsed.joins || [])) {
     j.leftRef.bound  = bindCol(j.leftRef.qualifier,  j.leftRef.name);
     j.rightRef.bound = bindCol(j.rightRef.qualifier, j.rightRef.name);
   }
 
   return scope;
+}
+
+// Structural key for an expression — used to match SELECT sub-expressions
+// against GROUP BY expressions. Skips synthetic underscore-keys so window
+// function _key markers don't perturb equality.
+export function exprKey(e) {
+  if (e == null) return "null";
+  switch (e.type) {
+    case "literal": return `L:${JSON.stringify(e.value)}`;
+    case "col":     return `C:${e.name}`;
+    case "star":    return "*";
+    case "agg":     return `A:${e.func}(${exprKey(e.arg)})`;
+    case "func":    return `F:${e.name}(${e.args.map(exprKey).join(",")})`;
+    case "case":    return `CASE(${e.branches.map((b) => exprKey(b.then)).join(";")};E:${exprKey(e.else)})`;
+    default:        return `T:${e.type}`;
+  }
+}
+
+function rewriteForGroup(e, rewriteMap) {
+  if (!e) return e;
+  const k = exprKey(e);
+  if (rewriteMap.has(k)) return { type: "col", name: rewriteMap.get(k) };
+  if (e.type === "func") {
+    return { ...e, args: e.args.map((a) => rewriteForGroup(a, rewriteMap)) };
+  }
+  if (e.type === "case") {
+    return {
+      ...e,
+      branches: e.branches.map((b) => ({ ...b, then: rewriteForGroup(b.then, rewriteMap) })),
+      else: e.else ? rewriteForGroup(e.else, rewriteMap) : null,
+    };
+  }
+  if (e.type === "agg") {
+    // Don't rewrite inside aggregates — the aggregate consumes raw row values.
+    return e;
+  }
+  return e;
 }
 
 function collectOuterAliases(scope) {
@@ -749,7 +869,7 @@ function executeBoundQuery(parsed, tables, outerRow = null) {
 
   // ---------- Aggregate / GROUP BY path ----------
   if (parsed.isAggregate) {
-    const groupSet = new Set(parsed.groupBy || []);
+    const groupSet = new Set(parsed._groupKeys || []);
     for (const it of parsed.selectItems) {
       if (!exprValidInAggregateSelect(it.expr, groupSet)) {
         const badName = it.expr.type === "col" ? it.expr.name : exprDefaultName(it.expr);
@@ -757,11 +877,25 @@ function executeBoundQuery(parsed, tables, outerRow = null) {
       }
     }
 
+    // Stash values for non-trivial GROUP BY expressions (e.g. EXTRACT(...))
+    // under the synthetic keys assigned at bind time. Clone each row so we
+    // don't pollute the source table with synthetic columns.
+    const hasComputedGroupExpr = parsed.groupBy && parsed.groupBy.some((g) => g.type !== "col");
+    if (hasComputedGroupExpr) {
+      rows = rows.map((r) => ({ ...r }));
+      for (let i = 0; i < parsed.groupBy.length; i++) {
+        const g = parsed.groupBy[i];
+        if (g.type === "col") continue;
+        const stashKey = parsed._groupKeys[i];
+        for (const r of rows) r[stashKey] = evalValueExpr(g, r, ctx);
+      }
+    }
+
     let groups;
-    if (parsed.groupBy && parsed.groupBy.length) {
+    if (parsed._groupKeys && parsed._groupKeys.length) {
       const m = new Map();
       for (const r of rows) {
-        const key = parsed.groupBy.map((c) => (r[c] == null ? " NULL" : String(r[c]))).join("|");
+        const key = parsed._groupKeys.map((c) => (r[c] == null ? " NULL" : String(r[c]))).join("|");
         if (!m.has(key)) m.set(key, []);
         m.get(key).push(r);
       }
@@ -853,6 +987,27 @@ function executeBoundQuery(parsed, tables, outerRow = null) {
 
 export function executeQuery(sql, tables) {
   const parsed = parseQuery(sql);
-  bindParsed(parsed, tables, null);
-  return executeBoundQuery(parsed, tables, null);
+
+  // Top-level CTEs: execute each in declaration order against the accumulated
+  // table map so later CTEs can reference earlier ones. Each CTE's rows array
+  // also carries its column order under `__columns__` so column resolution
+  // works even when the CTE produced zero rows.
+  let effectiveTables = tables;
+  const ctes = parsed.ctes || [];
+  if (ctes.length > 0) {
+    effectiveTables = { ...tables };
+    for (const cte of ctes) {
+      bindParsed(cte.query, effectiveTables, null);
+      const cteResult = executeBoundQuery(cte.query, effectiveTables, null);
+      const cteRows = cteResult.rows;
+      Object.defineProperty(cteRows, "__columns__", {
+        value: cteResult.columns,
+        enumerable: false,
+      });
+      effectiveTables[cte.name] = cteRows;
+    }
+  }
+
+  bindParsed(parsed, effectiveTables, null);
+  return executeBoundQuery(parsed, effectiveTables, null);
 }

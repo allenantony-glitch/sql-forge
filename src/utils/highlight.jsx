@@ -13,6 +13,9 @@ export const SQL_KEYWORDS = [
   // Window functions + OVER clause keywords.
   "rank", "dense_rank", "row_number", "ntile", "percent_rank", "lag", "lead",
   "over", "partition", "rows", "preceding", "following", "unbounded", "current", "row",
+  // CTEs, date/string functions, and COALESCE.
+  "with", "extract", "for",
+  "upper", "lower", "length", "trim", "substring", "concat", "replace", "split_part", "coalesce",
 ];
 export const KW_RE = new RegExp(`\\b(${SQL_KEYWORDS.join("|")})\\b`, "gi");
 
