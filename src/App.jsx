@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { CHALLENGES } from './data/challenges';
 import { LAYERS } from './data/layers';
 import { GEMS, GEM_BY_ID, nextGemLevel } from './data/gems';
-import { validatePipeline, pipelineMatchesExpected } from './data/operations';
+import { validatePipeline, pipelineMatchesExpected, UNLOCKED_THROUGH_LAYER } from './data/operations';
 import { TABLES, TABLE_COLUMN_ORDER, SHOWS_DATA, SHOW_COLUMN_ORDER } from './data/shows';
 import { parseQuery } from './engine/parser';
 import { executeQuery, bindParsed } from './engine/executor';
@@ -23,7 +23,9 @@ import { DiagnoseChallenge } from './components/challenges/DiagnoseChallenge';
 import { TeachBackChallenge } from './components/challenges/TeachBackChallenge';
 import { ManyRoadsChallenge } from './components/challenges/ManyRoadsChallenge';
 import { RealWorldChallenge } from './components/challenges/RealWorldChallenge';
-import { saveState, loadState } from './hooks/usePersistedState';
+import { saveState, loadState, storageAvailable, SCHEMA_VERSION } from './hooks/usePersistedState';
+import { computeGemDisplay } from './utils/dimming';
+import { todayDateString, pickForDate, updateStreak } from './utils/daily';
 
 export default function App() {
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -67,25 +69,51 @@ export default function App() {
   const [animationParsed, setAnimationParsed] = useState(null);
   const [skipAnimations, setSkipAnimations] = useState(false);
 
-  // Gem brightness levels: { [gemId]: 0..4 }. Start every gem at 0 (unlit).
-  const [gems, setGems] = useState(() => Object.fromEntries(GEMS.map((g) => [g.id, 0])));
+  // Gem state: { [gemId]: { level: 0..4, lastUsed: ISO|null } }.
+  // Stored (not display) level — dimming is applied on the way out via
+  // computeGemDisplay so the spaced-repetition floor never erases progress
+  // permanently. lastUsed updates whenever a gem levels up or reuses its
+  // concept on a correct challenge.
+  const [gems, setGems] = useState(() =>
+    Object.fromEntries(GEMS.map((g) => [g.id, { level: 0, lastUsed: null }]))
+  );
   // The gem ID that most recently changed level — drives a brief pop animation.
   const [recentLevelUp, setRecentLevelUp] = useState(null);
   // Defer persistence until after the initial load attempt completes, so we don't
   // overwrite saved state with the fresh defaults on first render.
   const [hydrated, setHydrated] = useState(false);
 
+  // Daily Forge streak + last-completed date (YYYY-MM-DD, local).
+  const [dailyState, setDailyState] = useState({ streakDays: 0, lastDailyDate: null });
+  const todayStr = todayDateString();
+
+  // Mobile drawer state for the layer map. Always closed by default.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Persistent banner shown when localStorage is unavailable (private mode, quota, etc).
+  const [storageNotice, setStorageNotice] = useState(false);
+  // Toast-style banner for export/import success/failure. Auto-clears after a few seconds.
+  const [transientNotice, setTransientNotice] = useState(null);
+
   // Hydrate persisted state from localStorage on mount. Falls through silently
   // if storage isn't available or parsing fails — we just start fresh.
   useEffect(() => {
+    if (!storageAvailable()) {
+      setStorageNotice(true);
+      setHydrated(true);
+      return;
+    }
     const data = loadState();
     if (data) {
       if (data.gems && typeof data.gems === "object") {
         setGems((prev) => {
           const next = { ...prev };
           for (const g of GEMS) {
-            const v = data.gems[g.id];
-            if (typeof v === "number" && v >= 0 && v <= 4) next[g.id] = v;
+            const raw = data.gems[g.id];
+            if (raw && typeof raw === "object" && typeof raw.level === "number") {
+              const level = Math.min(4, Math.max(0, raw.level));
+              const lastUsed = typeof raw.lastUsed === "string" ? raw.lastUsed : null;
+              next[g.id] = { level, lastUsed };
+            }
           }
           return next;
         });
@@ -106,9 +134,34 @@ export default function App() {
         }
         setManyRoadsHistory(filtered);
       }
+      if (data.daily && typeof data.daily === "object") {
+        setDailyState({
+          streakDays: typeof data.daily.streakDays === "number" ? data.daily.streakDays : 0,
+          lastDailyDate: typeof data.daily.lastDailyDate === "string" ? data.daily.lastDailyDate : null,
+        });
+      }
     }
     setHydrated(true);
   }, []);
+
+  // Auto-clear transient notices after ~3s so they don't linger.
+  useEffect(() => {
+    if (!transientNotice) return;
+    const t = setTimeout(() => setTransientNotice(null), 3500);
+    return () => clearTimeout(t);
+  }, [transientNotice]);
+
+  // Dimming reads a single "now" snapshot per visit. We bump it when the tab
+  // regains focus so a learner who leaves the app open overnight still sees
+  // accurate dim levels next morning — without recomputing on every render.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const onFocus = () => setNowMs(Date.now());
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+  const gemDisplay = useMemo(() => computeGemDisplay(gems, nowMs), [gems, nowMs]);
+  const isDailyDoneToday = dailyState.lastDailyDate === todayStr;
 
   const animating =
     animationPhase !== "idle" && animationPhase !== "complete";
@@ -176,25 +229,36 @@ export default function App() {
   // Held until hydration finishes so we don't blow away saved state on first render.
   useEffect(() => {
     if (!hydrated) return;
-    saveState({ gems, completed, currentChallenge: challenge.id, manyRoadsHistory });
-  }, [hydrated, gems, completed, challenge.id, manyRoadsHistory]);
+    saveState({
+      gems,
+      completed,
+      currentChallenge: challenge.id,
+      manyRoadsHistory,
+      daily: dailyState,
+    });
+  }, [hydrated, gems, completed, challenge.id, manyRoadsHistory, dailyState]);
 
   // Earn gems for the just-correctly-solved challenge. Each concept ratchets up
-  // to the level its challenge type / breadth warrants. Pop animation triggers
-  // for the gem with the largest jump.
+  // to the level its challenge type / breadth warrants. Even a same-level use
+  // refreshes lastUsed — that's the spaced-repetition signal. Pop animation
+  // triggers for the gem with the largest jump.
   const earnGemsForChallenge = (ch) => {
     if (!ch.concepts || ch.concepts.length === 0) return;
+    const nowIso = new Date().toISOString();
     setGems((prev) => {
       const next = { ...prev };
       let topGain = 0;
       let popId = null;
       for (const concept of ch.concepts) {
         if (!GEM_BY_ID[concept]) continue;
-        const before = next[concept] || 0;
-        const after = nextGemLevel(before, ch);
-        if (after > before) {
-          next[concept] = after;
-          const gain = after - before;
+        const beforeEntry = next[concept] || { level: 0, lastUsed: null };
+        const beforeLevel = beforeEntry.level || 0;
+        const afterLevel = nextGemLevel(beforeLevel, ch);
+        // Always stamp lastUsed — even when the level doesn't change, the
+        // concept was just exercised and shouldn't immediately start dimming.
+        next[concept] = { level: afterLevel, lastUsed: nowIso };
+        if (afterLevel > beforeLevel) {
+          const gain = afterLevel - beforeLevel;
           if (gain > topGain) { topGain = gain; popId = concept; }
         }
       }
@@ -210,7 +274,7 @@ export default function App() {
     if (typeof window !== "undefined" && typeof window.confirm === "function") {
       if (!window.confirm("Reset all progress? Gems, completed challenges, and saved position will be wiped.")) return;
     }
-    setGems(Object.fromEntries(GEMS.map((g) => [g.id, 0])));
+    setGems(Object.fromEntries(GEMS.map((g) => [g.id, { level: 0, lastUsed: null }])));
     setCompleted([]);
     setStatusById({});
     setCurrentIdx(0);
@@ -227,6 +291,110 @@ export default function App() {
     setManyRoadsHistory({});
     setQueries(Object.fromEntries(CHALLENGES.map((c) => [c.id, ""])));
     setPipelines(Object.fromEntries(CHALLENGES.map((c) => [c.id, []])));
+    setDailyState({ streakDays: 0, lastDailyDate: null });
+  };
+
+  // Find an already-completed challenge whose concepts include the dim gem,
+  // and re-present it. Falls back to "any challenge with this concept" if
+  // none completed (e.g. the gem was earned and then cleared). Used by
+  // "Polish dim gems" in the gem belt.
+  const handlePolishDimGem = (gemId) => {
+    const matchCh = (ch) =>
+      Array.isArray(ch.concepts) && ch.concepts.includes(gemId)
+      && (ch.layer == null || ch.layer <= UNLOCKED_THROUGH_LAYER);
+    const completedSet = new Set(completed);
+    const completedMatch = CHALLENGES.find((c) => completedSet.has(c.id) && matchCh(c));
+    const fallback = CHALLENGES.find(matchCh);
+    const target = completedMatch || fallback;
+    if (!target) return;
+    const idx = CHALLENGES.indexOf(target);
+    goToChallenge(idx);
+  };
+
+  // Daily Forge — pick deterministically from challenges the learner can
+  // reach (layer unlocked). Same challenge for everyone for a given day.
+  const dailyEligible = useMemo(
+    () => CHALLENGES.filter((c) => (c.layer || 1) <= UNLOCKED_THROUGH_LAYER),
+    []
+  );
+  const dailyChallenge = useMemo(
+    () => pickForDate(dailyEligible, todayStr),
+    [dailyEligible, todayStr]
+  );
+
+  const handleStartDaily = () => {
+    if (!dailyChallenge) return;
+    const idx = CHALLENGES.indexOf(dailyChallenge);
+    if (idx >= 0) goToChallenge(idx);
+  };
+
+  // Bump streak when the learner completes the daily-pick challenge for today.
+  // Watched via the completed list — any path to "correct" on that id counts.
+  useEffect(() => {
+    if (!hydrated || !dailyChallenge) return;
+    if (!completed.includes(dailyChallenge.id)) return;
+    if (dailyState.lastDailyDate === todayStr) return;
+    setDailyState((prev) => updateStreak(prev, todayStr));
+  }, [hydrated, completed, dailyChallenge, dailyState.lastDailyDate, todayStr]);
+
+  const handleExport = () => {
+    const payload = JSON.stringify(
+      { v: SCHEMA_VERSION, gems, completed, currentChallenge: challenge.id, manyRoadsHistory, daily: dailyState },
+      null,
+      2
+    );
+    let copied = false;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(payload);
+        copied = true;
+      }
+    } catch { /* ignore */ }
+    if (!copied) {
+      // Pop a prompt with the payload so the user can copy manually.
+      try { window.prompt("Copy your progress snapshot:", payload); } catch { /* ignore */ }
+    }
+    setTransientNotice({ kind: "info", text: copied ? "Progress copied to clipboard." : "Progress snapshot ready." });
+  };
+
+  const handleImport = () => {
+    const raw = typeof window?.prompt === "function"
+      ? window.prompt("Paste a progress snapshot (JSON):", "")
+      : null;
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") throw new Error("Invalid snapshot");
+      if (data.v !== SCHEMA_VERSION) throw new Error(`Snapshot is for schema v${data.v}, app is v${SCHEMA_VERSION}`);
+      if (data.gems && typeof data.gems === "object") {
+        const nextGems = Object.fromEntries(GEMS.map((g) => [g.id, { level: 0, lastUsed: null }]));
+        for (const g of GEMS) {
+          const raw = data.gems[g.id];
+          if (raw && typeof raw === "object" && typeof raw.level === "number") {
+            nextGems[g.id] = {
+              level: Math.min(4, Math.max(0, raw.level)),
+              lastUsed: typeof raw.lastUsed === "string" ? raw.lastUsed : null,
+            };
+          }
+        }
+        setGems(nextGems);
+      }
+      if (Array.isArray(data.completed)) {
+        setCompleted(data.completed.filter((id) => CHALLENGES.some((c) => c.id === id)));
+      }
+      if (data.manyRoadsHistory && typeof data.manyRoadsHistory === "object") {
+        setManyRoadsHistory(data.manyRoadsHistory);
+      }
+      if (data.daily && typeof data.daily === "object") {
+        setDailyState({
+          streakDays: typeof data.daily.streakDays === "number" ? data.daily.streakDays : 0,
+          lastDailyDate: typeof data.daily.lastDailyDate === "string" ? data.daily.lastDailyDate : null,
+        });
+      }
+      setTransientNotice({ kind: "info", text: "Progress imported." });
+    } catch (e) {
+      setTransientNotice({ kind: "error", text: `Import failed: ${e.message}` });
+    }
   };
 
   const handleSubmit = () => {
@@ -611,7 +779,31 @@ export default function App() {
         transition: "background 600ms ease-out",
       }}
     >
-      <GemBelt gems={gems} recentLevelUp={recentLevelUp} />
+      <GemBelt
+        display={gemDisplay}
+        recentLevelUp={recentLevelUp}
+        onPolishDimGem={handlePolishDimGem}
+        onOpenSidebar={() => setSidebarOpen(true)}
+        streakDays={dailyState.streakDays}
+      />
+
+      {storageNotice && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-[11px] text-amber-200 text-center">
+          Progress won't be saved in this browser mode.
+        </div>
+      )}
+      {transientNotice && (
+        <div
+          className={`border-b px-4 py-1.5 text-[11px] text-center ${
+            transientNotice.kind === "error"
+              ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+          }`}
+          role="status"
+        >
+          {transientNotice.text}
+        </div>
+      )}
 
       <div className="flex" style={{ minHeight: "calc(100vh - 49px)" }}>
         <LayerMap
@@ -621,23 +813,34 @@ export default function App() {
           completedIds={completed}
           onSelectChallenge={goToChallenge}
           onResetProgress={handleResetProgress}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onStartDaily={handleStartDaily}
+          dailyChallengeId={dailyChallenge?.id}
+          dailyAlreadyDone={isDailyDoneToday}
+          onExport={handleExport}
+          onImport={handleImport}
         />
 
-        <main className="flex-1 p-6 overflow-x-hidden">
+        <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-x-hidden min-w-0">
           {/* Challenge header */}
-          <div className="flex items-end justify-between gap-4 mb-4">
-            <div>
-              <div className="text-xs uppercase tracking-widest text-stone-500 mb-1">
+          <div className="flex items-start sm:items-end justify-between gap-2 sm:gap-4 mb-4 flex-wrap">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] sm:text-xs uppercase tracking-widest text-stone-500 mb-1">
                 Challenge {currentIdx + 1} of {CHALLENGES.length} — Layer {challenge.layer}: {layerName}
               </div>
-              <h1 className="text-2xl font-bold text-stone-100">
+              <h1 className="text-lg sm:text-2xl font-bold text-stone-100">
                 <span className="text-stone-500 font-mono mr-2">{challenge.id}</span>
                 {challenge.title}
               </h1>
-              <p className="text-sm text-stone-400 mt-1 max-w-2xl">{challenge.description}</p>
+              <p className="text-xs sm:text-sm text-stone-400 mt-1 max-w-2xl">{challenge.description}</p>
             </div>
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 text-xs text-amber-200 shrink-0">
-              {badge.icon} {badge.label}
+            <div
+              className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs text-amber-200 shrink-0"
+              title={badge.label}
+            >
+              <span>{badge.icon}</span>
+              <span className="hidden sm:inline">{badge.label}</span>
             </div>
           </div>
 
@@ -757,7 +960,18 @@ export default function App() {
           {/* Operation Builder — only for operation_builder challenges */}
           {isOpBuilder && !isPipelineConfirmed && (
             <div className="mb-4 space-y-3">
-              <OperationsPalette />
+              <OperationsPalette
+                onTapBlock={(opId) => {
+                  // Tap-to-add fallback for touch devices: append the operation
+                  // at the first empty slot if one exists, else append a new step.
+                  const current = pipeline;
+                  const emptyAt = current.findIndex((v) => v == null);
+                  const next = [...current];
+                  if (emptyAt >= 0) next[emptyAt] = opId;
+                  else next.push(opId);
+                  setPipelineForCurrent(next);
+                }}
+              />
               <PipelineBuilder
                 pipeline={pipeline}
                 onChange={setPipelineForCurrent}
@@ -797,7 +1011,7 @@ export default function App() {
               onQueryChange={(v) => setQueries((q) => ({ ...q, [challenge.id]: v }))}
               status={status}
               skipAnimations={skipAnimations}
-              gems={gems}
+              gemDisplay={gemDisplay}
               onSolve={handleRealWorldSolve}
               onNext={handleNext}
               hasNext={hasNext}
@@ -821,7 +1035,7 @@ export default function App() {
                     errorMessage={errorByCurrent}
                     submitDisabled={animating}
                   />
-                  <SyntaxShelf gems={gems} />
+                  <SyntaxShelf display={gemDisplay} />
                 </>
               )}
             </div>

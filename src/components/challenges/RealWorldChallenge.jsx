@@ -202,7 +202,7 @@ export function RealWorldChallenge({
   onQueryChange,
   status,
   skipAnimations,
-  gems,
+  gemDisplay,
   onSolve,
   onNext,
   hasNext,
@@ -372,7 +372,7 @@ export function RealWorldChallenge({
               Plan or skip the pipeline above first, then submit.
             </div>
           )}
-          <SyntaxShelf gems={gems || {}} />
+          <SyntaxShelf display={gemDisplay || {}} />
         </div>
       )}
 

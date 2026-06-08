@@ -7,9 +7,14 @@ import { GemShape } from './GemBelt';
 // Each template fades / shortens as its gem brightens.
 // ============================================================
 
-export function SyntaxShelf({ gems }) {
+// `display` is the dimming-adjusted gem map ({ id: { level, ... } }) from
+// computeGemDisplay. Reading display level (not stored level) means dimmed
+// gems' templates re-appear in the shelf — the spaced-repetition signal also
+// brings the syntax back into view.
+export function SyntaxShelf({ display }) {
   const [open, setOpen] = useState(false);
-  const visible = SYNTAX_TEMPLATES.filter((t) => (gems[t.gemId] || 0) < 4);
+  const levelOf = (id) => (display[id]?.level || 0);
+  const visible = SYNTAX_TEMPLATES.filter((t) => levelOf(t.gemId) < 4);
   if (visible.length === 0) {
     return (
       <section className="rounded-lg border border-stone-800 bg-stone-900/30 px-3 py-2 text-[11px] text-stone-500 italic">
@@ -34,7 +39,7 @@ export function SyntaxShelf({ gems }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-3 border-t border-stone-800">
           {visible.map((t) => {
             const gem = GEM_BY_ID[t.gemId];
-            const level = gems[t.gemId] || 0;
+            const level = levelOf(t.gemId);
             const keywordOnly = level >= 3;
             const display = keywordOnly ? `${t.keyword} …` : t.template;
             return (

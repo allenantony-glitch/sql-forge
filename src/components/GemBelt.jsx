@@ -1,5 +1,5 @@
-import { Lock, Gem } from 'lucide-react';
-import { GEMS, GEM_BY_ID, GEM_LEVEL_LABEL, GEM_LEVEL_OPACITY } from '../data/gems';
+import { Lock, Gem, Sparkles } from 'lucide-react';
+import { GEMS, GEM_LEVEL_LABEL, GEM_LEVEL_OPACITY } from '../data/gems';
 import { UNLOCKED_THROUGH_LAYER } from '../data/operations';
 
 // ============================================================
@@ -80,15 +80,30 @@ export function GemShape({ shape, color, size = 24 }) {
   }
 }
 
-export function GemBadge({ gem, level, locked, justLeveled }) {
+export function GemBadge({ gem, level, locked, justLeveled, dimming, daysSinceUse }) {
   const opacity = GEM_LEVEL_OPACITY[level] ?? 0.15;
   const isBlazing = level === 4;
   const isUnlit = level === 0;
   const drawColor = isUnlit ? "#44403c" : gem.color;
   const label = GEM_LEVEL_LABEL[level] || "unlit";
-  const tooltip = locked
-    ? `${gem.name} — ${gem.concept} — locked (Layer ${gem.layer})`
-    : `${gem.name} — ${gem.concept} — Level ${level} (${label})`;
+  const daysInt = daysSinceUse != null ? Math.floor(daysSinceUse) : null;
+  let tooltip;
+  if (locked) {
+    tooltip = `${gem.name} — ${gem.concept} — locked (Layer ${gem.layer})`;
+  } else if (dimming && daysInt != null) {
+    tooltip = `${gem.name} — Needs practice — last used ${daysInt} day${daysInt === 1 ? "" : "s"} ago`;
+  } else {
+    tooltip = `${gem.name} — ${gem.concept} — Level ${level} (${label})`;
+  }
+
+  // The blazing pulse and the dim pulse are distinct: blazing is the "fully
+  // internalized" reward, dim is the "needs practice" prompt. Dim wins when
+  // both would apply — the user needs to see it before the celebration.
+  const pulseClass = dimming
+    ? "sf-gem-dim-pulse"
+    : isBlazing
+    ? "sf-gem-pulse"
+    : "";
 
   return (
     <div
@@ -99,7 +114,7 @@ export function GemBadge({ gem, level, locked, justLeveled }) {
       <div
         className={[
           "inline-flex items-center justify-center",
-          isBlazing ? "sf-gem-pulse" : "",
+          pulseClass,
           justLeveled ? "sf-gem-pop" : "",
         ].join(" ")}
         style={{
@@ -122,30 +137,79 @@ export function GemBadge({ gem, level, locked, justLeveled }) {
   );
 }
 
-export function GemBelt({ gems, recentLevelUp }) {
-  const earnedCount = GEMS.filter((g) => (gems[g.id] || 0) > 0).length;
+// `display` is the post-dimming view: { [gemId]: { level, dimming, daysSinceUse } }.
+// Callers pre-compute this with computeGemDisplay() so the belt doesn't have to
+// know about timer math.
+export function GemBelt({
+  display,
+  recentLevelUp,
+  onPolishDimGem,
+  onOpenSidebar,
+  streakDays,
+}) {
+  const earnedCount = GEMS.filter((g) => (display[g.id]?.level || 0) > 0).length;
+  const dimGem = GEMS.find((g) => display[g.id]?.dimming) || null;
   return (
-    <div className="border-b border-stone-800 bg-stone-950/80 px-4 py-2 flex items-center gap-3">
-      <Gem size={16} className="text-stone-600 shrink-0" />
-      <div className="text-xs uppercase tracking-widest text-stone-500 shrink-0">Gem Belt</div>
-      <div className="flex items-center gap-2 overflow-x-auto py-1 flex-1">
+    <div className="border-b border-stone-800 bg-stone-950/80 px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3">
+      {onOpenSidebar && (
+        <button
+          type="button"
+          onClick={onOpenSidebar}
+          className="md:hidden -ml-1 p-1.5 rounded text-stone-400 hover:text-stone-100 hover:bg-stone-800/60 transition-colors shrink-0"
+          aria-label="Open layer map"
+          title="Open layer map"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      )}
+      <Gem size={16} className="text-stone-600 shrink-0 hidden sm:inline" />
+      <div className="text-xs uppercase tracking-widest text-stone-500 shrink-0 hidden sm:block">Gem Belt</div>
+      <div className="flex items-center gap-2 overflow-x-auto py-1 flex-1 min-w-0">
         {GEMS.map((gem) => {
-          const level = gems[gem.id] || 0;
+          const d = display[gem.id] || { level: 0, dimming: false, daysSinceUse: null };
           const locked = !!gem.layer && gem.layer > UNLOCKED_THROUGH_LAYER;
           return (
             <GemBadge
               key={gem.id}
               gem={gem}
-              level={locked ? 0 : level}
+              level={locked ? 0 : d.level}
               locked={locked}
               justLeveled={recentLevelUp === gem.id}
+              dimming={!locked && d.dimming}
+              daysSinceUse={d.daysSinceUse}
             />
           );
         })}
       </div>
-      <div className="text-[11px] text-stone-500 shrink-0 tabular-nums">
+      <div className="text-[11px] text-stone-500 shrink-0 tabular-nums hidden md:block">
         {earnedCount}/{GEMS.filter((g) => !g.layer || g.layer <= UNLOCKED_THROUGH_LAYER).length} lit
       </div>
+      {dimGem && onPolishDimGem && (
+        <button
+          type="button"
+          onClick={() => onPolishDimGem(dimGem.id)}
+          className="shrink-0 inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 px-2 py-1 text-[11px] transition-colors"
+          title={`Polish your ${dimGem.name} gem — head to a challenge that uses it`}
+        >
+          <Sparkles size={11} />
+          <span className="hidden sm:inline">Polish dim gems</span>
+          <span className="sm:hidden">Polish</span>
+        </button>
+      )}
+      {streakDays > 0 && (
+        <div
+          className="shrink-0 inline-flex items-center gap-1 text-[11px] text-amber-300 tabular-nums"
+          title={`${streakDays}-day Daily Forge streak`}
+        >
+          <span aria-hidden="true">🔥</span>
+          <span className="hidden sm:inline">{streakDays}</span>
+          <span className="sm:hidden">{streakDays}</span>
+        </div>
+      )}
     </div>
   );
 }

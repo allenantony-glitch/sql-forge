@@ -15,7 +15,7 @@ import { OPERATIONS, OPERATIONS_LIST, UNLOCKED_THROUGH_LAYER, pipelineMatchesExp
 
 let activeDrag = null; // { opId, source: "palette" | "pipeline", fromIdx?: number }
 
-export function PaletteBlock({ opId, locked }) {
+export function PaletteBlock({ opId, locked, onTap }) {
   const op = OPERATIONS[opId];
   const onDragStart = (e) => {
     if (locked) { e.preventDefault(); return; }
@@ -36,28 +36,39 @@ export function PaletteBlock({ opId, locked }) {
       </div>
     );
   }
+  // Click handler is the touch-friendly fallback. Drag still works as before;
+  // tapping just adds the block to the next empty slot.
   return (
-    <div
+    <button
+      type="button"
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onClick={() => onTap && onTap(opId)}
+      title="Drag into the pipeline, or tap to add to the next empty slot"
       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 text-xs cursor-grab active:cursor-grabbing hover:bg-cyan-500/20 hover:border-cyan-400/60 transition-colors select-none"
     >
       <span>{op.icon}</span>
       <span className="font-medium">{op.label}</span>
-    </div>
+    </button>
   );
 }
 
-export function OperationsPalette() {
+export function OperationsPalette({ onTapBlock }) {
   return (
     <section className="rounded-lg border border-stone-800 bg-stone-900/50 p-3">
       <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-2">
-        Available Operations · drag into the pipeline
+        <span className="hidden sm:inline">Available Operations · drag into the pipeline</span>
+        <span className="sm:hidden">Tap to add · or drag</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {OPERATIONS_LIST.map((opId) => (
-          <PaletteBlock key={opId} opId={opId} locked={OPERATIONS[opId].layer > UNLOCKED_THROUGH_LAYER} />
+          <PaletteBlock
+            key={opId}
+            opId={opId}
+            locked={OPERATIONS[opId].layer > UNLOCKED_THROUGH_LAYER}
+            onTap={onTapBlock}
+          />
         ))}
       </div>
     </section>
