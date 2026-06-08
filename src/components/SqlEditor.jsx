@@ -35,31 +35,31 @@ export function SqlEditor({ value, onChange, onSubmit, status, errorMessage, sub
 
   return (
     <section className={`rounded-lg border ${borderClass} ${animClass} bg-stone-950/80 transition-shadow`}>
-      <header className="flex items-center justify-between px-3 py-2 border-b border-stone-800">
-        <div className="flex items-center gap-2">
+      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-stone-800">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="text-[10px] uppercase tracking-widest text-stone-500">SQL Editor</span>
-          <span className="text-[11px] text-stone-600">forge your spell</span>
+          <span className="text-[11px] text-stone-600 hidden sm:inline">forge your spell</span>
         </div>
         <button
           onClick={onSubmit}
           disabled={submitDisabled}
-          className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors disabled:bg-stone-700 disabled:text-stone-500 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 px-3 py-1.5 text-xs font-semibold transition-colors disabled:bg-stone-700 disabled:text-stone-500 disabled:cursor-not-allowed shrink-0"
         >
           <Play size={12} /> Submit
-          <span className="opacity-70 ml-1">⌘↵</span>
+          <span className="opacity-70 ml-1 hidden sm:inline">⌘↵</span>
         </button>
       </header>
-      <div className="flex font-mono text-sm" style={{ fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+      <div className="flex font-mono text-xs sm:text-sm" style={{ fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace' }}>
         <pre
-          className="select-none text-right text-stone-600 px-3 py-3 bg-stone-950/60 border-r border-stone-800 leading-6"
+          className="select-none text-right text-stone-600 px-2 sm:px-3 py-3 bg-stone-950/60 border-r border-stone-800 leading-6"
           aria-hidden="true"
-          style={{ minWidth: "2.75rem", margin: 0 }}
+          style={{ minWidth: "2.5rem", margin: 0 }}
         >
           {lineNumbers}
         </pre>
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <pre
-            className="absolute inset-0 px-3 py-3 m-0 whitespace-pre-wrap break-words text-stone-200 pointer-events-none leading-6"
+            className="absolute inset-0 px-2 sm:px-3 py-3 m-0 whitespace-pre-wrap break-words text-stone-200 pointer-events-none leading-6"
             aria-hidden="true"
             style={{ fontFamily: "inherit" }}
           >
@@ -75,7 +75,7 @@ export function SqlEditor({ value, onChange, onSubmit, status, errorMessage, sub
             autoCorrect="off"
             autoCapitalize="off"
             placeholder=""
-            className="relative block w-full bg-transparent outline-none resize-none px-3 py-3 leading-6"
+            className="relative block w-full bg-transparent outline-none resize-none px-2 sm:px-3 py-3 leading-6"
             style={{
               minHeight: `${Math.max(lineCount, 4) * 1.5 + 1.5}rem`,
               color: "transparent",

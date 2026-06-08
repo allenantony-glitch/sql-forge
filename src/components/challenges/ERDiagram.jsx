@@ -64,11 +64,19 @@ function lShapePath(from, to) {
   return `M ${from.x} ${from.y} L ${midX} ${from.y} L ${midX} ${to.y} L ${to.x} ${to.y}`;
 }
 
+// Lines anchor between cards in the horizontal layout, but stop making
+// sense once the diagram stacks vertically on narrow screens (md breakpoint).
+// We hide them below md and recompute when the layout flips.
+const MD_BREAKPOINT_PX = 768;
+
 export function ERDiagram() {
   const containerRef = useRef(null);
   const cardRefs = useRef({});
   const [lines, setLines] = useState([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const [isNarrow, setIsNarrow] = useState(
+    typeof window !== "undefined" ? window.innerWidth < MD_BREAKPOINT_PX : false
+  );
 
   const measure = () => {
     const container = containerRef.current;
@@ -114,7 +122,10 @@ export function ERDiagram() {
   }, []);
 
   useEffect(() => {
-    const onResize = () => measure();
+    const onResize = () => {
+      setIsNarrow(window.innerWidth < MD_BREAKPOINT_PX);
+      measure();
+    };
     window.addEventListener("resize", onResize);
     let ro;
     if (typeof ResizeObserver !== "undefined" && containerRef.current) {
@@ -137,40 +148,43 @@ export function ERDiagram() {
 
       <div ref={containerRef} className="relative">
         {/* SVG overlay for relationship lines. pointer-events-none so it
-            doesn't block hover/focus on the cards. */}
-        <svg
-          className="absolute inset-0 pointer-events-none"
-          width={size.w || "100%"}
-          height={size.h || "100%"}
-          viewBox={`0 0 ${size.w || 1} ${size.h || 1}`}
-          preserveAspectRatio="none"
-        >
-          <defs>
-            <marker
-              id="er-arrow"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#57534e" />
-            </marker>
-          </defs>
-          {lines.map((ln) => (
-            <path
-              key={ln.id}
-              d={ln.path}
-              fill="none"
-              stroke="#57534e"
-              strokeWidth="1"
-              markerEnd="url(#er-arrow)"
-            />
-          ))}
-        </svg>
+            doesn't block hover/focus on the cards. Hidden on narrow screens
+            where cards stack vertically and connectors stop tracking. */}
+        {!isNarrow && (
+          <svg
+            className="absolute inset-0 pointer-events-none"
+            width={size.w || "100%"}
+            height={size.h || "100%"}
+            viewBox={`0 0 ${size.w || 1} ${size.h || 1}`}
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <marker
+                id="er-arrow"
+                viewBox="0 0 10 10"
+                refX="8"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#57534e" />
+              </marker>
+            </defs>
+            {lines.map((ln) => (
+              <path
+                key={ln.id}
+                d={ln.path}
+                fill="none"
+                stroke="#57534e"
+                strokeWidth="1"
+                markerEnd="url(#er-arrow)"
+              />
+            ))}
+          </svg>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 relative z-10">
           <div className="md:order-1">
             <TableCard
               name="episodes"

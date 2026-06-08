@@ -20,6 +20,15 @@ body {
 }
 .sf-gem-pulse { animation: sfGemPulse 2s ease-in-out infinite; transform-origin: center; }
 
+/* Dim-pulse is a slower, gentler opacity oscillation — "needs refreshing,"
+   not "blazing." Distinct rhythm from sfGemPulse so the learner can tell
+   level-4 celebration apart from spaced-repetition prompt. */
+@keyframes sfGemDimPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.sf-gem-dim-pulse { animation: sfGemDimPulse 3.2s ease-in-out infinite; transform-origin: center; }
+
 @keyframes sfGemPop {
   0%   { transform: scale(1); filter: brightness(1); }
   50%  { transform: scale(1.3); filter: brightness(1.6); }

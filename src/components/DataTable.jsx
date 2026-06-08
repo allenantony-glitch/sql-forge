@@ -35,8 +35,8 @@ export function DataTable({
           {rows.length} row{rows.length === 1 ? "" : "s"} · {columns.length} col{columns.length === 1 ? "" : "s"}
         </span>
       </header>
-      <div className={`overflow-auto ${maxHeight}`}>
-        <table className="w-full text-xs border-collapse">
+      <div className={`overflow-x-auto overflow-y-auto ${maxHeight}`}>
+        <table className="w-full text-xs border-collapse min-w-max">
           <thead className="sticky top-0">
             <tr className="bg-stone-950">
               {columns.map((c) => {
