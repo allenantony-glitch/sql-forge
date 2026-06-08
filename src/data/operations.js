@@ -9,15 +9,18 @@ export const OPERATIONS = {
   limit:  { id: "limit",  icon: "✂️", label: "LIMIT",           hint: "LIMIT",    layer: 1 },
   group:  { id: "group",  icon: "📊", label: "GROUP & COMPUTE", hint: "GROUP BY", layer: 2 },
   having: { id: "having", icon: "🛡️", label: "FILTER GROUPS",   hint: "HAVING",   layer: 2 },
-  join:   { id: "join",   icon: "🔗", label: "CONNECT TABLES",  hint: "JOIN",     layer: 3 },
-  window: { id: "window", icon: "🪟", label: "WINDOW COMPUTE",  hint: "OVER ()",  layer: 5 },
+  join:     { id: "join",     icon: "🔗", label: "CONNECT TABLES",  hint: "JOIN",     layer: 3 },
+  subquery: { id: "subquery", icon: "🔎", label: "INNER QUERY",     hint: "subquery", layer: 4 },
+  window:   { id: "window",   icon: "🪟", label: "WINDOW COMPUTE",  hint: "OVER ()",  layer: 5 },
 };
 
-export const OPERATIONS_LIST = ["filter", "select", "sort", "limit", "group", "having", "join", "window"];
-export const UNLOCKED_THROUGH_LAYER = 3;
+export const OPERATIONS_LIST = ["filter", "select", "sort", "limit", "group", "having", "join", "subquery", "window"];
+export const UNLOCKED_THROUGH_LAYER = 4;
 
 // Canonical SQL execution order rank — lower = earlier.
-export const CANONICAL_RANK = { filter: 0, group: 1, having: 2, select: 3, sort: 4, limit: 5 };
+// Subquery is treated as ranking before FILTER: conceptually you compute the
+// inner query first, then use its result in WHERE.
+export const CANONICAL_RANK = { subquery: -1, filter: 0, group: 1, having: 2, select: 3, sort: 4, limit: 5 };
 
 export function validatePipeline(ops) {
   const seen = new Set();

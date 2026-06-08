@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Check, X, Play, RotateCcw, ChevronRight, Shuffle, Lightbulb } from 'lucide-react';
 import { parseQuery } from '../../engine/parser';
-import { executeQuery } from '../../engine/executor';
+import { executeQuery, bindParsed } from '../../engine/executor';
 import { compareResults } from '../../engine/comparator';
 import { TABLES, TABLE_COLUMN_ORDER } from '../../data/shows';
 import { HighlightedSql } from '../../utils/highlight';
@@ -93,6 +93,10 @@ export function ManyRoadsChallenge({
     for (const a of approaches) {
       try {
         const parsed = parseQuery(a.sql);
+        // The animation hand-rolls evalExpr against this AST, which requires
+        // column qualifiers to be resolved — without binding, correlated
+        // subqueries (NOT EXISTS, etc.) silently mis-evaluate.
+        bindParsed(parsed, TABLES);
         const result = executeQuery(a.sql, TABLES);
         const hasJoin = (parsed.joins || []).length > 0;
         const animSourceRows = hasJoin
@@ -193,7 +197,17 @@ export function ManyRoadsChallenge({
     }
     try {
       const actual = executeQuery(query, TABLES);
-      if (compareResults(actual, expectedWriteResult)) {
+      const writeParsed = approachMeta[writeApproach.id]?.parsed;
+      const orderMatters = !!(writeParsed && writeParsed.orderBy && writeParsed.orderBy.length);
+      const rowsMatch = compareResults(actual, expectedWriteResult, orderMatters);
+      // MANY ROADS approaches all return the same rows by design, so we also
+      // require the user's query to use the *mechanism* of the chosen approach
+      // (LEFT JOIN, NOT IN, NOT EXISTS, etc). The `match` function lives on
+      // the approach data in challenges.js.
+      const mechanismMatch = typeof writeApproach.match === "function"
+        ? writeApproach.match(query)
+        : true;
+      if (rowsMatch && mechanismMatch) {
         setEditorStatus("correct");
         setEditorError(null);
         setActualResult(actual);
@@ -209,7 +223,13 @@ export function ManyRoadsChallenge({
         if (firstWrite) onSolve?.(writeApproach.id);
       } else {
         setEditorStatus("wrong");
-        setEditorError(null);
+        // Distinguish "rows match, wrong mechanism" — easy to miss otherwise,
+        // since the result panel looks identical to a correct submission.
+        setEditorError(
+          rowsMatch && !mechanismMatch
+            ? `Right rows, but that's not the ${writeApproach.label} mechanism. Re-read the approach above and try again.`
+            : null
+        );
         setActualResult(actual);
       }
     } catch (e) {

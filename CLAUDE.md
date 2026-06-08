@@ -99,7 +99,7 @@ sql-forge/
 - Output directory: `dist`
 
 ## Build Phases
-Current phase: Phase 13
+Current phase: Phase 15
 
 Completed:
 - Phase 1: Core shell + Layer 1 TRANSFORM challenges ✓
@@ -115,10 +115,10 @@ Completed:
 - Phase 10: Restructure to Vite + React, deploy on Vercel ✓
 - Phase 11: MANY ROADS challenge type (2 challenges in Layer 3) ✓
 - Phase 12: REAL WORLD challenge type + ER diagram component (2 challenges in Layer 3) ✓
+- Phase 13: Layer 4 SQL engine — subqueries in WHERE/FROM/SELECT, EXISTS, NOT IN/NOT EXISTS, column-to-column WHERE comparisons ✓
+- Phase 14: Layer 4 challenges (12 challenges, 4.1–4.12) + UNION/INTERSECT/EXCEPT engine support + Nest gem + amber Layer 4 background ✓
 
 Remaining:
-- Phase 13: Layer 4 SQL engine — subqueries in WHERE/FROM/SELECT, EXISTS, NOT IN/NOT EXISTS
-- Phase 14: Layer 4 challenges (6-8 challenges) + UNION/INTERSECT/EXCEPT engine support
 - Phase 15: Layer 5 SQL engine — window functions (RANK, DENSE_RANK, ROW_NUMBER, LAG, LEAD, PARTITION BY, frame clauses)
 - Phase 16: Layer 5 SQL engine — CTEs (WITH...AS, multiple CTEs, recursive) + string/date functions (EXTRACT, UPPER, SUBSTRING, CONCAT)
 - Phase 17: Layer 5 challenges (8-10 challenges) + Master Trials (5 HackerRank-style problems)

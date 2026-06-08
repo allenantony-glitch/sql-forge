@@ -277,7 +277,18 @@ function bindOuter(scope, qualifier, name) {
   return null;
 }
 
-function bindParsed(parsed, tables, outerScope = null) {
+// Exported so animation consumers can bind a separately-parsed AST before
+// handing it to evalExpr — without binding, correlated subqueries that
+// reference outer aliases (e.g. `r.show_id = s.id`) get mis-evaluated.
+export function bindParsed(parsed, tables, outerScope = null) {
+  // Set operations (UNION / INTERSECT / EXCEPT) are non-correlated: bind each
+  // branch independently, then we're done — there's no outer scope to expose.
+  if (parsed.type === "set_operation") {
+    bindParsed(parsed.left, tables, null);
+    bindParsed(parsed.right, tables, null);
+    return null;
+  }
+
   // Derived table in FROM is non-correlated by SQL semantics — bind it
   // independently with no outer scope.
   if (parsed.derivedTable) {
@@ -426,10 +437,69 @@ function prefixOuterRow(row) {
   return out;
 }
 
+// UNION / INTERSECT / EXCEPT — combine two query results.
+// Left side's column names become the output's column names (SQL convention).
+function executeSetOperation(parsed, tables, outerRow) {
+  const leftResult = executeBoundQuery(parsed.left, tables, outerRow);
+  const rightResult = executeBoundQuery(parsed.right, tables, outerRow);
+  if (leftResult.columns.length !== rightResult.columns.length) {
+    throw new Error("UNION/INTERSECT/EXCEPT require the same number of columns");
+  }
+  const columns = leftResult.columns;
+  const keyOf = (row, cols) => cols.map((c) => (row[c] == null ? " NULL" : String(row[c]))).join("|");
+
+  // The right-side rows are accessed by the LEFT side's column names, since
+  // SQL set operations match positionally. Re-key right rows accordingly.
+  const rightAligned = rightResult.rows.map((r) => {
+    const o = {};
+    rightResult.columns.forEach((c, i) => { o[columns[i]] = r[c]; });
+    return o;
+  });
+
+  if (parsed.op === "union") {
+    if (parsed.all) return { columns, rows: [...leftResult.rows, ...rightAligned] };
+    const seen = new Set();
+    const rows = [];
+    for (const row of [...leftResult.rows, ...rightAligned]) {
+      const key = keyOf(row, columns);
+      if (!seen.has(key)) { seen.add(key); rows.push(row); }
+    }
+    return { columns, rows };
+  }
+
+  if (parsed.op === "intersect") {
+    const rightKeys = new Set(rightAligned.map((r) => keyOf(r, columns)));
+    const seen = new Set();
+    const rows = [];
+    for (const row of leftResult.rows) {
+      const key = keyOf(row, columns);
+      if (rightKeys.has(key) && !seen.has(key)) { seen.add(key); rows.push(row); }
+    }
+    return { columns, rows };
+  }
+
+  if (parsed.op === "except") {
+    const rightKeys = new Set(rightAligned.map((r) => keyOf(r, columns)));
+    const seen = new Set();
+    const rows = [];
+    for (const row of leftResult.rows) {
+      const key = keyOf(row, columns);
+      if (!rightKeys.has(key) && !seen.has(key)) { seen.add(key); rows.push(row); }
+    }
+    return { columns, rows };
+  }
+
+  throw new Error(`Unknown set operation: ${parsed.op}`);
+}
+
 // Execute an already-bound parsed query. For correlated subqueries, the caller
 // passes the current outer row; its keys get an OUTER_PREFIX so they coexist
 // with the inner row's keys when both are merged for evaluation.
 function executeBoundQuery(parsed, tables, outerRow = null) {
+  if (parsed.type === "set_operation") {
+    return executeSetOperation(parsed, tables, outerRow);
+  }
+
   // Resolve the source row set: a real table or a derived-table result.
   let source;
   if (parsed.derivedTable) {
