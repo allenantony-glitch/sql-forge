@@ -99,7 +99,7 @@ sql-forge/
 - Output directory: `dist`
 
 ## Build Phases
-Current phase: Phase 17
+Current phase: Phase 18
 
 Completed:
 - Phase 1: Core shell + Layer 1 TRANSFORM challenges ✓
@@ -119,7 +119,7 @@ Completed:
 - Phase 14: Layer 4 challenges (12 challenges, 4.1–4.12) + UNION/INTERSECT/EXCEPT engine support + Nest gem + amber Layer 4 background ✓
 - Phase 15: Layer 5 SQL engine — window functions (RANK, DENSE_RANK, ROW_NUMBER, NTILE, PERCENT_RANK, LAG, LEAD, PARTITION BY, ORDER BY, ROWS frame clauses) ✓
 - Phase 16: Layer 5 SQL engine — CTEs (WITH...AS, multiple CTEs), string/date functions (EXTRACT, UPPER, LOWER, LENGTH, TRIM, SUBSTRING, CONCAT, REPLACE, SPLIT_PART, COALESCE), GROUP BY on expressions ✓
+- Phase 17: Layer 5 challenges (5.1–5.12) + Master Trials (5.13–5.17) + daily_metrics table + window/chain/clock/knife gems + Layer 5 unlock ✓
 
 Remaining:
-- Phase 17: Layer 5 challenges (8-10 challenges) + Master Trials (5 HackerRank-style problems)
 - Phase 18: Polish — mobile responsiveness, gem dimming timer, daily challenge, edge cases, performance

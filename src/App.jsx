@@ -242,7 +242,13 @@ export default function App() {
     }
     try {
       const parsed = parseQuery(query);
-      bindParsed(parsed, TABLES); // AnimationStage hand-rolls evalExpr on this AST
+      const hasCtes = (parsed.ctes || []).length > 0;
+      // bindParsed walks the outer query's column refs against the table map.
+      // CTE-defined names aren't in TABLES until executeQuery registers them
+      // mid-flight, so binding the outer query first would throw. Skip — the
+      // animation also can't render CTE pipelines, so we'd skip animation
+      // either way.
+      if (!hasCtes) bindParsed(parsed, TABLES);
       const actual = executeQuery(query, TABLES);
       // The target's ORDER BY is what makes order matter; derive once per check.
       let targetOrderMatters = false;
@@ -267,9 +273,10 @@ export default function App() {
           // query's outer scope refers to the subquery's output columns, which
           // don't exist on the picker row — animating would just drop every row.
           // UNION/INTERSECT/EXCEPT can't be animated against a single source either.
+          // CTE queries reference virtual tables AnimationStage doesn't know about.
           // Skip cleanly instead.
           const isDerived = !isSetOp && !!parsed.derivedTable;
-          const first = (isSetOp || isDerived) ? null : (hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns));
+          const first = (isSetOp || isDerived || hasCtes) ? null : (hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns));
           if (first) {
             setAnimationParsed(parsed);
             setAnimationPhase(first); // AnimationStage takes over from here
@@ -591,6 +598,7 @@ export default function App() {
     2: "radial-gradient(1200px 600px at 20% -10%, rgba(30, 64, 175, 0.22), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(14, 116, 144, 0.22), transparent 60%), linear-gradient(180deg, #0b1120 0%, #0f172a 100%)",
     3: "radial-gradient(900px 500px at 0% 10%, rgba(20, 184, 166, 0.18), transparent 60%), radial-gradient(900px 500px at 100% 30%, rgba(168, 85, 247, 0.16), transparent 60%), linear-gradient(180deg, #082f49 0%, #0f172a 100%)",
     4: "radial-gradient(1200px 600px at 20% -10%, rgba(180, 83, 9, 0.12), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(120, 53, 15, 0.15), transparent 60%), linear-gradient(180deg, #0c0a09 0%, #1c1917 100%)",
+    5: "radial-gradient(1200px 600px at 20% -10%, rgba(220, 38, 38, 0.14), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(234, 88, 12, 0.16), transparent 60%), linear-gradient(180deg, #0c0a09 0%, #1a0f0a 100%)",
   };
   const layerName = LAYERS[challenge.layer - 1]?.name || "Unknown";
 

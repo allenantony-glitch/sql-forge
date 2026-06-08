@@ -19,6 +19,10 @@ export const GEMS = [
   { id: "nest",       name: "Nest",       color: "#eab308", shape: "circle",    concept: "Subqueries" },
   { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding" },
   { id: "map",        name: "Map",        color: "#b45309", shape: "rectangle", concept: "Real-world translation" },
+  { id: "window",     name: "Window",     color: "#38bdf8", shape: "rectangle", concept: "Window functions" },
+  { id: "chain",      name: "Chain",      color: "#94a3b8", shape: "hexagon",   concept: "CTEs" },
+  { id: "clock",      name: "Clock",      color: "#fbbf24", shape: "circle",    concept: "Date functions" },
+  { id: "knife",      name: "Knife",      color: "#cbd5e1", shape: "diamond",   concept: "String functions" },
 ];
 
 export const GEM_BY_ID = Object.fromEntries(GEMS.map((g) => [g.id, g]));
@@ -55,6 +59,14 @@ export const SYNTAX_TEMPLATES = [
   { id: "sub_derived",  gemId: "nest",   keyword: "FROM (SELECT)",    template: "FROM (SELECT ... FROM <table>) AS <alias>" },
   { id: "set_union",    gemId: "nest",   keyword: "UNION",            template: "SELECT ... UNION SELECT ..." },
   { id: "set_except",   gemId: "nest",   keyword: "EXCEPT",           template: "SELECT ... EXCEPT SELECT ..." },
+  { id: "win_rank",     gemId: "window", keyword: "RANK OVER",        template: "RANK() OVER (PARTITION BY <col> ORDER BY <col>)" },
+  { id: "win_rownum",   gemId: "window", keyword: "ROW_NUMBER OVER",  template: "ROW_NUMBER() OVER (ORDER BY <col>)" },
+  { id: "win_laglead",  gemId: "window", keyword: "LAG / LEAD",       template: "LAG(<col>) OVER (ORDER BY <col>)" },
+  { id: "win_running",  gemId: "window", keyword: "Running total",    template: "SUM(<col>) OVER (ORDER BY <col>)" },
+  { id: "win_moving",   gemId: "window", keyword: "Moving window",    template: "AVG(<col>) OVER (ORDER BY <col> ROWS BETWEEN <n> PRECEDING AND CURRENT ROW)" },
+  { id: "cte_with",     gemId: "chain",  keyword: "WITH",             template: "WITH <name> AS ( SELECT ... ) SELECT ... FROM <name>" },
+  { id: "extract",      gemId: "clock",  keyword: "EXTRACT",          template: "EXTRACT(YEAR|QUARTER|MONTH|DAY FROM <date_col>)" },
+  { id: "str_funcs",    gemId: "knife",  keyword: "String funcs",     template: "UPPER(<col>) | SUBSTRING(<col>, <start>, <len>) | CONCAT(<a>, <b>)" },
 ];
 
 // Brightness rules: walk every concept on the challenge and ratchet the gem up.
