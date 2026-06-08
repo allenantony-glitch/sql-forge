@@ -4,6 +4,13 @@ export const AGG_FUNCS = new Set(["count", "sum", "avg", "min", "max"]);
 export const WINDOW_FUNCS = new Set([
   "rank", "dense_rank", "row_number", "ntile", "percent_rank", "lag", "lead",
 ]);
+// Per-row functions that read like a function call but operate on individual
+// row values (NOT aggregates). When they appear as a left operand in WHERE,
+// parseCondition takes a value-expr path instead of expecting a bare column.
+export const SCALAR_FUNCS = new Set([
+  "upper", "lower", "length", "trim", "substring",
+  "concat", "replace", "split_part", "coalesce", "extract",
+]);
 
 // Identifiers that are reserved keywords for clause boundaries — they CANNOT
 // be table aliases right after FROM / JOIN. Without this guard, `FROM shows
@@ -152,6 +159,24 @@ export function parseQuery(sql) {
     }
 
     if (t.type === "ident") {
+      // EXTRACT(<part> FROM <expr>) — SQL standard, not a regular function call.
+      if (t.value === "extract" && peek(1) && peek(1).type === "lparen") {
+        consume(); // EXTRACT
+        consume(); // (
+        const partTok = peek();
+        if (!partTok || partTok.type !== "ident") {
+          throw new Error("EXTRACT expects a date part (YEAR, MONTH, QUARTER, DAY)");
+        }
+        consume();
+        const part = partTok.value;
+        if (!isKw("from")) throw new Error("Expected FROM in EXTRACT");
+        consume();
+        const colExpr = parseValueExpr();
+        if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after EXTRACT");
+        consume();
+        return { type: "func", name: "extract", args: [{ type: "literal", value: part }, colExpr] };
+      }
+
       // CASE WHEN ... [WHEN ...]* [ELSE ...] END
       if (t.value === "case") {
         consume();
@@ -237,6 +262,47 @@ export function parseQuery(sql) {
           if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after ROUND(...)");
           consume();
           return { type: "func", name: "round", args: [inner, { type: "literal", value: decT.value }] };
+        }
+
+        if (SCALAR_FUNCS.has(fname)) {
+          // SUBSTRING also accepts the SQL-standard `SUBSTRING(expr FROM start FOR length)` form.
+          if (fname === "substring") {
+            const first = parseValueExpr();
+            if (isKw("from")) {
+              consume();
+              const start = parseValueExpr();
+              let length = null;
+              if (isKw("for")) {
+                consume();
+                length = parseValueExpr();
+              }
+              if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after SUBSTRING(...)");
+              consume();
+              const args = length != null ? [first, start, length] : [first, start];
+              return { type: "func", name: "substring", args };
+            }
+            // Fall through to the comma-separated form
+            const args = [first];
+            while (peek() && peek().type === "comma") {
+              consume();
+              args.push(parseValueExpr());
+            }
+            if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after SUBSTRING(...)");
+            consume();
+            return { type: "func", name: "substring", args };
+          }
+
+          const args = [];
+          if (peek() && peek().type !== "rparen") {
+            while (true) {
+              args.push(parseValueExpr());
+              if (peek() && peek().type === "comma") { consume(); continue; }
+              break;
+            }
+          }
+          if (!peek() || peek().type !== "rparen") throw new Error(`Expected ) after ${fname.toUpperCase()}(...)`);
+          consume();
+          return { type: "func", name: fname, args };
         }
 
         throw new Error(`Unknown function: ${t.raw || t.value}`);
@@ -386,6 +452,30 @@ export function parseQuery(sql) {
       consume();
       return expr;
     }
+
+    // EXTRACT / UPPER / LOWER / etc. on the left side of a comparison — these
+    // are value expressions, not bare column refs. Compare the result to a
+    // literal (or NULL) using the standard operators.
+    if (peek() && peek().type === "ident" && SCALAR_FUNCS.has(peek().value)
+        && peek(1) && peek(1).type === "lparen") {
+      const left = parseValueExpr();
+      const opTok = peek();
+      if (!opTok || opTok.type !== "op") {
+        throw new Error("Expected comparison operator after expression in WHERE");
+      }
+      consume();
+      const rt = peek();
+      if (rt && (rt.type === "number" || rt.type === "string")) {
+        consume();
+        return { type: "compare_value_expr", left, op: opTok.value, value: rt.value };
+      }
+      if (rt && rt.type === "ident" && rt.value === "null") {
+        consume();
+        return { type: "compare_value_expr", left, op: opTok.value, value: null };
+      }
+      throw new Error("Expected literal on right side of comparison");
+    }
+
     const ref = parseColumnRef();
     const col = ref.name;
     const qualifier = ref.qualifier;
@@ -620,8 +710,13 @@ export function parseQuery(sql) {
       consume();
       groupBy = [];
       while (true) {
-        const ref = parseColumnRef();
-        groupBy.push({ name: ref.name, qualifier: ref.qualifier });
+        // Accept any value expression — column refs are still the common case,
+        // but EXTRACT and other scalar funcs are now allowed too.
+        const expr = parseValueExpr();
+        if (exprHasAgg(expr)) {
+          throw new Error("GROUP BY cannot contain aggregate functions");
+        }
+        groupBy.push(expr);
         if (peek() && peek().type === "comma") { consume(); continue; }
         break;
       }
@@ -711,7 +806,34 @@ export function parseQuery(sql) {
     return result;
   }
 
-  const result = parseSelectStatement();
+  // ----- WITH <name> AS ( <select> ) [, <name> AS ( <select> )]* — top level only.
+  // Each CTE is executed in order; later CTEs may reference earlier ones.
+  function parseTopLevel() {
+    const ctes = [];
+    if (isKw("with")) {
+      consume();
+      while (true) {
+        const nameTok = peek();
+        if (!nameTok || nameTok.type !== "ident") throw new Error("Expected CTE name after WITH");
+        const cteName = consume().value;
+        if (!isKw("as")) throw new Error("Expected AS after CTE name");
+        consume();
+        if (!peek() || peek().type !== "lparen") throw new Error("Expected ( after AS");
+        consume();
+        const cteQuery = parseSelectStatement();
+        if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after CTE query");
+        consume();
+        ctes.push({ name: cteName, query: cteQuery });
+        if (peek() && peek().type === "comma") { consume(); continue; }
+        break;
+      }
+    }
+    const main = parseSelectStatement();
+    if (ctes.length > 0) main.ctes = ctes;
+    return main;
+  }
+
+  const result = parseTopLevel();
   if (peek()) throw new Error(`Unexpected token after query: ${peek().raw || peek().value || peek().type}`);
   return result;
 }
