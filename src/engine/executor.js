@@ -147,6 +147,10 @@ export function evalValueExpr(expr, row, ctx = null) {
       }
       return sub.rows[0][sub.columns[0]];
     }
+    case "window_function":
+      // Window function values are precomputed and stashed under expr._key
+      // before projection. Just read it back here.
+      return expr._key in row ? row[expr._key] : null;
     default:
       throw new Error(`Cannot evaluate expression of type ${expr.type}`);
   }
@@ -367,6 +371,26 @@ export function bindParsed(parsed, tables, outerScope = null) {
       case "select_subquery":
         bindParsed(e.subquery, tables, scope);
         return;
+      case "window_function":
+        // Bind the wrapped function's column refs (agg arg or window_func_call args)
+        walkValue(e.func);
+        // Bind PARTITION BY columns
+        if (e.over.partitionBy) {
+          for (const p of e.over.partitionBy) {
+            p.bound = bindCol(p.qualifier, p.name);
+          }
+        }
+        // Bind ORDER BY columns inside the window spec
+        if (e.over.orderBy) {
+          for (const ob of e.over.orderBy) {
+            ob.column.bound = bindCol(ob.column.qualifier, ob.column.name);
+          }
+        }
+        return;
+      case "window_func_call":
+        // Args can be column refs (LAG, LEAD) or literals (NTILE, LAG offset)
+        for (const a of e.args) walkValue(a);
+        return;
     }
   }
 
@@ -435,6 +459,200 @@ function prefixOuterRow(row) {
   const out = {};
   for (const k of Object.keys(row)) out[OUTER_PREFIX + k] = row[k];
   return out;
+}
+
+// ----- window function execution -----
+//
+// Window functions enrich rows without collapsing them. For each window expr we:
+//   1. sort the row indices by the window's ORDER BY (stable, preserves original
+//      position on ties)
+//   2. group the sorted indices into partitions by PARTITION BY (insertion order
+//      preserves the sorted-by-ORDER-BY order within each partition)
+//   3. compute the function's value for each row in each partition and stash it
+//      under the expression's synthetic _key — projection reads it via evalValueExpr.
+
+// Walk select items collecting every window_function node (may be nested inside
+// ROUND or CASE).
+function collectWindowFunctions(selectItems) {
+  const found = [];
+  function walk(e) {
+    if (!e) return;
+    if (e.type === "window_function") { found.push(e); return; }
+    if (e.type === "func") { for (const a of e.args) walk(a); return; }
+    if (e.type === "case") {
+      for (const b of e.branches) walk(b.then);
+      if (e.else) walk(e.else);
+    }
+  }
+  for (const it of selectItems) walk(it.expr);
+  return found;
+}
+
+function computeWindowFunction(rows, winExpr) {
+  const { func, over, _key } = winExpr;
+
+  // Stable sort indices by ORDER BY; fall back to original position on full ties.
+  let sortedIndices = rows.map((_, i) => i);
+  if (over.orderBy && over.orderBy.length) {
+    const decorated = sortedIndices.map((i, pos) => ({ i, pos }));
+    decorated.sort((a, b) => {
+      for (const ob of over.orderBy) {
+        const key = ob.column.bound;
+        const va = rows[a.i][key];
+        const vb = rows[b.i][key];
+        if (va == null && vb == null) continue;
+        if (va == null) return ob.direction === "asc" ? -1 : 1;
+        if (vb == null) return ob.direction === "asc" ? 1 : -1;
+        if (va < vb) return ob.direction === "asc" ? -1 : 1;
+        if (va > vb) return ob.direction === "asc" ? 1 : -1;
+      }
+      return a.pos - b.pos;
+    });
+    sortedIndices = decorated.map((d) => d.i);
+  }
+
+  const partitions = partitionRows(rows, sortedIndices, over.partitionBy);
+  for (const partition of partitions) {
+    computeWindowValue(rows, partition, func, over, _key);
+  }
+}
+
+function partitionRows(rows, sortedIndices, partitionBy) {
+  if (!partitionBy || partitionBy.length === 0) return [sortedIndices];
+  const groups = new Map();
+  const order = [];
+  for (const idx of sortedIndices) {
+    const key = partitionBy.map((p) => {
+      const v = rows[idx][p.bound];
+      return v == null ? " NULL" : JSON.stringify(v);
+    }).join("|");
+    if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+    groups.get(key).push(idx);
+  }
+  return order.map((k) => groups.get(k));
+}
+
+// Compare two rows' ORDER BY key values for tie detection in RANK / DENSE_RANK.
+function tiedOnOrderBy(rows, a, b, orderBy) {
+  if (!orderBy || !orderBy.length) return true; // no ORDER BY → all rows are "tied"
+  return orderBy.every((ob) => rows[a][ob.column.bound] === rows[b][ob.column.bound]);
+}
+
+function computeWindowValue(rows, partition, func, over, outKey) {
+  const funcName = (func.func || "").toLowerCase();
+
+  switch (funcName) {
+    case "row_number": {
+      partition.forEach((idx, i) => { rows[idx][outKey] = i + 1; });
+      return;
+    }
+    case "rank": {
+      let rank = 1;
+      partition.forEach((idx, i) => {
+        if (i > 0 && !tiedOnOrderBy(rows, idx, partition[i - 1], over.orderBy)) rank = i + 1;
+        rows[idx][outKey] = rank;
+      });
+      return;
+    }
+    case "dense_rank": {
+      let rank = 1;
+      partition.forEach((idx, i) => {
+        if (i > 0 && !tiedOnOrderBy(rows, idx, partition[i - 1], over.orderBy)) rank++;
+        rows[idx][outKey] = rank;
+      });
+      return;
+    }
+    case "ntile": {
+      const n = func.args[0] && func.args[0].type === "literal" ? func.args[0].value : 1;
+      const size = partition.length;
+      partition.forEach((idx, i) => {
+        rows[idx][outKey] = size === 0 ? null : Math.floor((i * n) / size) + 1;
+      });
+      return;
+    }
+    case "percent_rank": {
+      const n = partition.length;
+      partition.forEach((idx, i) => {
+        rows[idx][outKey] = n <= 1 ? 0 : i / (n - 1);
+      });
+      return;
+    }
+    case "lag":
+    case "lead": {
+      const colArg = func.args[0];
+      if (!colArg || colArg.type !== "col") {
+        throw new Error(`${funcName.toUpperCase()} expects a column as its first argument`);
+      }
+      const colKey = colArg.name;
+      const offsetArg = func.args[1];
+      const offset = offsetArg && offsetArg.type === "literal" ? offsetArg.value : 1;
+      const dir = funcName === "lag" ? -1 : 1;
+      partition.forEach((idx, i) => {
+        const sourcePos = i + dir * offset;
+        rows[idx][outKey] = (sourcePos >= 0 && sourcePos < partition.length)
+          ? rows[partition[sourcePos]][colKey]
+          : null;
+      });
+      return;
+    }
+    case "sum":
+    case "avg":
+    case "count":
+    case "min":
+    case "max": {
+      // func is an `agg` node: { type: "agg", func, arg: {type:"star"} | {type:"col", name} }
+      const isStar = func.arg.type === "star";
+      const argKey = isStar ? null : func.arg.name;
+      partition.forEach((idx, i) => {
+        const [frameStart, frameEnd] = resolveFrame(over.frame, over.orderBy, i, partition.length);
+        const frameIndices = partition.slice(frameStart, frameEnd + 1);
+        const values = frameIndices
+          .map((fi) => (isStar ? 1 : rows[fi][argKey]))
+          .filter((v) => v != null);
+        switch (funcName) {
+          case "count":
+            rows[idx][outKey] = isStar ? frameIndices.length : values.length;
+            break;
+          case "sum":
+            rows[idx][outKey] = values.length ? values.reduce((a, b) => a + b, 0) : null;
+            break;
+          case "avg":
+            rows[idx][outKey] = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+            break;
+          case "min":
+            rows[idx][outKey] = values.length ? values.reduce((a, b) => (b < a ? b : a)) : null;
+            break;
+          case "max":
+            rows[idx][outKey] = values.length ? values.reduce((a, b) => (b > a ? b : a)) : null;
+            break;
+        }
+      });
+      return;
+    }
+    default:
+      throw new Error(`Unknown window function: ${funcName}`);
+  }
+}
+
+function resolveFrame(frame, orderBy, currentPos, partitionSize) {
+  if (!frame) {
+    // SQL defaults: with ORDER BY → running aggregate (UNBOUNDED PRECEDING .. CURRENT ROW);
+    // without ORDER BY → entire partition.
+    if (orderBy && orderBy.length) return [0, currentPos];
+    return [0, partitionSize - 1];
+  }
+  return [resolveBound(frame.start, currentPos, partitionSize), resolveBound(frame.end, currentPos, partitionSize)];
+}
+
+function resolveBound(b, currentPos, partitionSize) {
+  switch (b.type) {
+    case "unbounded_preceding": return 0;
+    case "unbounded_following": return partitionSize - 1;
+    case "current_row":         return currentPos;
+    case "preceding":           return Math.max(0, currentPos - b.offset);
+    case "following":           return Math.min(partitionSize - 1, currentPos + b.offset);
+    default: throw new Error(`Unknown frame bound: ${b.type}`);
+  }
 }
 
 // UNION / INTERSECT / EXCEPT — combine two query results.
@@ -577,6 +795,14 @@ function executeBoundQuery(parsed, tables, outerRow = null) {
   }
 
   // ---------- Non-aggregate path ----------
+  // Window functions enrich each row with a computed column (stashed under a
+  // synthetic _key) BEFORE projection — projection then reads it via
+  // evalValueExpr's window_function case.
+  const windowExprs = collectWindowFunctions(parsed.selectItems || []);
+  for (const wExpr of windowExprs) {
+    computeWindowFunction(rows, wExpr);
+  }
+
   let outCols, outRows;
   if (parsed.isStar) {
     if (rows.length) {

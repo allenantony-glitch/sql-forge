@@ -1,6 +1,9 @@
 import { tokenize } from './tokenizer';
 
 export const AGG_FUNCS = new Set(["count", "sum", "avg", "min", "max"]);
+export const WINDOW_FUNCS = new Set([
+  "rank", "dense_rank", "row_number", "ntile", "percent_rank", "lag", "lead",
+]);
 
 // Identifiers that are reserved keywords for clause boundaries — they CANNOT
 // be table aliases right after FROM / JOIN. Without this guard, `FROM shows
@@ -30,6 +33,15 @@ export function exprDefaultName(expr) {
   if (expr.type === "case") return "case";
   if (expr.type === "literal") return String(expr.value);
   if (expr.type === "select_subquery") return "subquery";
+  if (expr.type === "window_function") {
+    const f = expr.func;
+    if (f.type === "agg") {
+      const argName = f.arg.type === "star" ? "*" : (f.arg.name || "?");
+      return `${f.func}(${argName})`;
+    }
+    if (f.type === "window_func_call") return `${f.func}()`;
+    return "window";
+  }
   return "expr";
 }
 
@@ -80,6 +92,9 @@ export function exprValidInAggregateSelect(expr, groupSet) {
 export function parseQuery(sql) {
   const tokens = tokenize(sql);
   let pos = 0;
+  // Synthetic key counter for window-function results. Each window expression
+  // gets a unique key so the executor can stash its computed value on each row.
+  let windowCounter = 0;
   const peek = (n = 0) => tokens[pos + n];
   const consume = () => tokens[pos++];
 
@@ -191,7 +206,25 @@ export function parseQuery(sql) {
           }
           if (!peek() || peek().type !== "rparen") throw new Error(`Expected ) after ${fname.toUpperCase()}(...)`);
           consume();
-          return { type: "agg", func: fname, arg };
+          const aggNode = { type: "agg", func: fname, arg };
+          if (isKw("over")) return parseOverClause(aggNode);
+          return aggNode;
+        }
+
+        if (WINDOW_FUNCS.has(fname)) {
+          const args = [];
+          if (peek() && peek().type !== "rparen") {
+            while (true) {
+              args.push(parseValueExpr());
+              if (peek() && peek().type === "comma") { consume(); continue; }
+              break;
+            }
+          }
+          if (!peek() || peek().type !== "rparen") throw new Error(`Expected ) after ${fname.toUpperCase()}(...)`);
+          consume();
+          const funcNode = { type: "window_func_call", func: fname, args };
+          if (!isKw("over")) throw new Error(`${fname.toUpperCase()} requires OVER (...)`);
+          return parseOverClause(funcNode);
         }
 
         if (fname === "round") {
@@ -215,6 +248,97 @@ export function parseQuery(sql) {
     }
 
     throw new Error(`Unexpected token in expression: ${t.raw || t.value || t.type}`);
+  }
+
+  // ----- window function: OVER ( [PARTITION BY ...] [ORDER BY ...] [ROWS frame] ) -----
+  function parseOverClause(funcNode) {
+    consume(); // OVER
+    if (!peek() || peek().type !== "lparen") throw new Error("Expected ( after OVER");
+    consume();
+    const over = parseWindowSpec();
+    if (!peek() || peek().type !== "rparen") throw new Error("Expected ) after window specification");
+    consume();
+    return {
+      type: "window_function",
+      func: funcNode,
+      over,
+      _key: `__win_${windowCounter++}__`,
+    };
+  }
+
+  function parseWindowSpec() {
+    const spec = { partitionBy: null, orderBy: null, frame: null };
+    if (isKw("partition")) {
+      consume();
+      if (!isKw("by")) throw new Error("Expected BY after PARTITION");
+      consume();
+      spec.partitionBy = [];
+      while (true) {
+        const ref = parseColumnRef();
+        spec.partitionBy.push({ name: ref.name, qualifier: ref.qualifier, bound: null });
+        if (peek() && peek().type === "comma") { consume(); continue; }
+        break;
+      }
+    }
+    if (isKw("order")) {
+      consume();
+      if (!isKw("by")) throw new Error("Expected BY after ORDER");
+      consume();
+      spec.orderBy = [];
+      while (true) {
+        const ref = parseColumnRef();
+        let direction = "asc";
+        if (isKw("asc")) consume();
+        else if (isKw("desc")) { consume(); direction = "desc"; }
+        spec.orderBy.push({
+          column: { name: ref.name, qualifier: ref.qualifier, bound: null },
+          direction,
+        });
+        if (peek() && peek().type === "comma") { consume(); continue; }
+        break;
+      }
+    }
+    if (isKw("rows")) {
+      consume();
+      spec.frame = parseFrameClause();
+    }
+    return spec;
+  }
+
+  function parseFrameClause() {
+    if (isKw("between")) {
+      consume();
+      const start = parseFrameBound();
+      if (!isKw("and")) throw new Error("Expected AND in frame clause");
+      consume();
+      const end = parseFrameBound();
+      return { type: "between", start, end };
+    }
+    // Single bound = BETWEEN bound AND CURRENT ROW
+    const bound = parseFrameBound();
+    return { type: "between", start: bound, end: { type: "current_row" } };
+  }
+
+  function parseFrameBound() {
+    if (isKw("unbounded")) {
+      consume();
+      if (isKw("preceding")) { consume(); return { type: "unbounded_preceding" }; }
+      if (isKw("following")) { consume(); return { type: "unbounded_following" }; }
+      throw new Error("Expected PRECEDING or FOLLOWING after UNBOUNDED");
+    }
+    if (isKw("current")) {
+      consume();
+      if (!isKw("row")) throw new Error("Expected ROW after CURRENT");
+      consume();
+      return { type: "current_row" };
+    }
+    if (peek() && peek().type === "number") {
+      const n = consume().value;
+      if (isKw("preceding")) { consume(); return { type: "preceding", offset: n }; }
+      if (isKw("following")) { consume(); return { type: "following", offset: n }; }
+      throw new Error("Expected PRECEDING or FOLLOWING after number in frame clause");
+    }
+    throw new Error("Invalid frame bound");
   }
 
   // ----- WHERE boolean expression -----

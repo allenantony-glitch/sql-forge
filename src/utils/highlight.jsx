@@ -10,6 +10,9 @@ export const SQL_KEYWORDS = [
   // Aggregate + scalar functions the engine understands — colour these too so
   // queries don't look half-highlighted.
   "count", "sum", "avg", "min", "max", "round",
+  // Window functions + OVER clause keywords.
+  "rank", "dense_rank", "row_number", "ntile", "percent_rank", "lag", "lead",
+  "over", "partition", "rows", "preceding", "following", "unbounded", "current", "row",
 ];
 export const KW_RE = new RegExp(`\\b(${SQL_KEYWORDS.join("|")})\\b`, "gi");
 
