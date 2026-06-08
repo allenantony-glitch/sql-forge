@@ -188,6 +188,12 @@ export function evalValueExpr(expr, row, ctx = null) {
       const vals = expr.args.map((a) => evalValueExpr(a, row, ctx));
       return applyScalarFunc(expr.name, vals);
     }
+    case "arith": {
+      const l = evalValueExpr(expr.left, row, ctx);
+      const r = evalValueExpr(expr.right, row, ctx);
+      if (l == null || r == null) return null;
+      return expr.op === "+" ? l + r : l - r;
+    }
     case "case":
       for (const b of expr.branches) {
         if (evalExpr(b.when, row, ctx)) return evalValueExpr(b.then, row, ctx);
@@ -246,6 +252,12 @@ export function evalAggOnGroup(expr, groupRows, ctx = null) {
     case "func": {
       const vals = expr.args.map((a) => evalAggOnGroup(a, groupRows, ctx));
       return applyScalarFunc(expr.name, vals);
+    }
+    case "arith": {
+      const l = evalAggOnGroup(expr.left, groupRows, ctx);
+      const r = evalAggOnGroup(expr.right, groupRows, ctx);
+      if (l == null || r == null) return null;
+      return expr.op === "+" ? l + r : l - r;
     }
     case "case":
       for (const b of expr.branches) {
@@ -418,6 +430,10 @@ export function bindParsed(parsed, tables, outerScope = null) {
         return;
       case "func":
         e.args.forEach(walkValue);
+        return;
+      case "arith":
+        walkValue(e.left);
+        walkValue(e.right);
         return;
       case "case":
         e.branches.forEach((b) => { walkWhere(b.when); walkValue(b.then); });
@@ -599,6 +615,7 @@ function collectWindowFunctions(selectItems) {
     if (!e) return;
     if (e.type === "window_function") { found.push(e); return; }
     if (e.type === "func") { for (const a of e.args) walk(a); return; }
+    if (e.type === "arith") { walk(e.left); walk(e.right); return; }
     if (e.type === "case") {
       for (const b of e.branches) walk(b.then);
       if (e.else) walk(e.else);
@@ -973,12 +990,35 @@ function executeBoundQuery(parsed, tables, outerRow = null) {
   }
 
   if (parsed.orderBy && parsed.orderBy.length) {
-    for (const { column } of parsed.orderBy) {
-      if (!outCols.includes(column)) {
-        throw new Error(`ORDER BY column "${column}" must be in the SELECT list`);
+    // Standard SQL lets ORDER BY reference source columns even when they
+    // weren't projected. If the column isn't in SELECT, pull it from the
+    // source row, sort on the enriched copy, then strip the carry-along.
+    const extraSortCols = parsed.orderBy
+      .map((o) => o.column)
+      .filter((c) => !outCols.includes(c));
+    if (extraSortCols.length > 0 && rows.length > 0) {
+      for (const c of extraSortCols) {
+        if (!(c in rows[0])) {
+          throw new Error(`ORDER BY column "${c}" must be in the SELECT list`);
+        }
       }
     }
-    outRows = sortRowsBy(outRows, parsed.orderBy);
+    let enriched = outRows;
+    if (extraSortCols.length > 0 && rows.length > 0) {
+      enriched = outRows.map((or, i) => {
+        const e = { ...or };
+        for (const c of extraSortCols) e[c] = rows[i][c];
+        return e;
+      });
+    }
+    const sorted = sortRowsBy(enriched, parsed.orderBy);
+    outRows = extraSortCols.length > 0
+      ? sorted.map((er) => {
+          const stripped = { ...er };
+          for (const c of extraSortCols) delete stripped[c];
+          return stripped;
+        })
+      : sorted;
   }
 
   if (parsed.limit != null) outRows = outRows.slice(0, parsed.limit);

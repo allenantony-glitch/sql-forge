@@ -141,6 +141,18 @@ export function parseQuery(sql) {
 
   // ----- expressions that yield a value (column refs, literals, function calls, CASE, scalar subqueries) -----
   function parseValueExpr() {
+    // Additive layer: atom (+|- atom)*. Left-associative.
+    let left = parseValueAtom();
+    while (peek() && peek().type === "op" && (peek().value === "+" || peek().value === "-")) {
+      const op = peek().value;
+      consume();
+      const right = parseValueAtom();
+      left = { type: "arith", op, left, right };
+    }
+    return left;
+  }
+
+  function parseValueAtom() {
     // (SELECT ...) — scalar subquery
     if (isSubqueryStart()) {
       consume(); // (

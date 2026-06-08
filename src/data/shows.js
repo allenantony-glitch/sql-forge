@@ -18,6 +18,10 @@ export const SHOWS_DATA = [
   { id: 13, name: "The Mandalorian",  genre: "Sci-Fi",  imdb_rating: 8.5, certificate: "PG",    premiere_year: 2019, finale_year: null, episode_count: 24,  overview: "A bounty hunter protects a mysterious child across the galaxy." },
   { id: 14, name: "The Walking Dead", genre: "Horror",  imdb_rating: 8.1, certificate: "R",     premiere_year: 2010, finale_year: 2022, episode_count: 177, overview: "Survivors of a zombie apocalypse fight to stay alive." },
   { id: 15, name: "Lost",             genre: "Mystery", imdb_rating: 8.3, certificate: "PG-13", premiere_year: 2004, finale_year: 2010, episode_count: 121, overview: "Plane crash survivors uncover the mysteries of a strange island." },
+  // Shows 16-17 deliberately have NO episodes in EPISODES_DATA — they power
+  // Layer 5's Master Trial II ("Shows Without Episodes" LEFT JOIN + IS NULL).
+  { id: 16, name: "Dark",              genre: "Sci-Fi",  imdb_rating: 8.7, certificate: "R",     premiere_year: 2017, finale_year: 2020, episode_count: 26,  overview: "A small German town's secrets unravel across four generations." },
+  { id: 17, name: "The Bear",          genre: "Drama",   imdb_rating: 8.6, certificate: "R",     premiere_year: 2022, finale_year: null, episode_count: 28,  overview: "A young chef returns home to run his late brother's sandwich shop." },
 ];
 
 export const EPISODES_DATA = [
@@ -46,7 +50,8 @@ export const EPISODES_DATA = [
 // Some shows deliberately have no reviews — this powers the LEFT JOIN /
 // "find the ghosts" challenges in Layer 3. Shows WITHOUT reviews:
 //   4 (Stranger Things), 6 (Friends), 7 (The Crown), 9 (Severance),
-//   13 (Mandalorian), 14 (Walking Dead), 15 (Lost)  → 7 orphans
+//   13 (Mandalorian), 14 (Walking Dead), 15 (Lost),
+//   16 (Dark), 17 (The Bear)  → 9 orphans
 export const REVIEWS_DATA = [
   { id: 1,  show_id: 1,  viewer: "alice",   rating: 10, review: "Perfect finale" },
   { id: 2,  show_id: 1,  viewer: "bob",     rating: 9,  review: "Incredible character development" },
@@ -60,16 +65,37 @@ export const REVIEWS_DATA = [
   { id: 10, show_id: 10, viewer: "bob",     rating: 9,  review: "Sharp writing throughout" },
 ];
 
-export const TABLES = { shows: SHOWS_DATA, episodes: EPISODES_DATA, reviews: REVIEWS_DATA };
+// Layer 5 time-series data — powers LAG/LEAD, running totals, moving averages.
+// Two shows, seven days each.
+export const DAILY_METRICS_DATA = [
+  { show_id: 1, metric_date: "2024-01-01", views: 12000, new_subs: 340, revenue: 2400.00 },
+  { show_id: 1, metric_date: "2024-01-02", views: 13500, new_subs: 390, revenue: 2700.00 },
+  { show_id: 1, metric_date: "2024-01-03", views: 11800, new_subs: 280, revenue: 2360.00 },
+  { show_id: 1, metric_date: "2024-01-04", views: 15200, new_subs: 450, revenue: 3040.00 },
+  { show_id: 1, metric_date: "2024-01-05", views: 16800, new_subs: 520, revenue: 3360.00 },
+  { show_id: 1, metric_date: "2024-01-06", views: 14300, new_subs: 410, revenue: 2860.00 },
+  { show_id: 1, metric_date: "2024-01-07", views: 18900, new_subs: 600, revenue: 3780.00 },
+  { show_id: 2, metric_date: "2024-01-01", views: 22000, new_subs: 800, revenue: 4400.00 },
+  { show_id: 2, metric_date: "2024-01-02", views: 21000, new_subs: 720, revenue: 4200.00 },
+  { show_id: 2, metric_date: "2024-01-03", views: 24500, new_subs: 900, revenue: 4900.00 },
+  { show_id: 2, metric_date: "2024-01-04", views: 23800, new_subs: 850, revenue: 4760.00 },
+  { show_id: 2, metric_date: "2024-01-05", views: 26000, new_subs: 980, revenue: 5200.00 },
+  { show_id: 2, metric_date: "2024-01-06", views: 25200, new_subs: 920, revenue: 5040.00 },
+  { show_id: 2, metric_date: "2024-01-07", views: 28000, new_subs: 1100, revenue: 5600.00 },
+];
 
-export const SHOW_COLUMN_ORDER    = ["id", "name", "genre", "imdb_rating", "certificate", "premiere_year", "finale_year", "episode_count", "overview"];
-export const EPISODE_COLUMN_ORDER = ["id", "show_id", "season", "episode", "title", "air_date", "runtime_min", "rating"];
-export const REVIEW_COLUMN_ORDER  = ["id", "show_id", "viewer", "rating", "review"];
+export const TABLES = { shows: SHOWS_DATA, episodes: EPISODES_DATA, reviews: REVIEWS_DATA, daily_metrics: DAILY_METRICS_DATA };
+
+export const SHOW_COLUMN_ORDER          = ["id", "name", "genre", "imdb_rating", "certificate", "premiere_year", "finale_year", "episode_count", "overview"];
+export const EPISODE_COLUMN_ORDER       = ["id", "show_id", "season", "episode", "title", "air_date", "runtime_min", "rating"];
+export const REVIEW_COLUMN_ORDER        = ["id", "show_id", "viewer", "rating", "review"];
+export const DAILY_METRICS_COLUMN_ORDER = ["show_id", "metric_date", "views", "new_subs", "revenue"];
 
 // Lookup used by the engine (bind / join construction) and by the multi-table
 // source display in the UI.
 export const TABLE_COLUMN_ORDER = {
-  shows:    SHOW_COLUMN_ORDER,
-  episodes: EPISODE_COLUMN_ORDER,
-  reviews:  REVIEW_COLUMN_ORDER,
+  shows:         SHOW_COLUMN_ORDER,
+  episodes:      EPISODE_COLUMN_ORDER,
+  reviews:       REVIEW_COLUMN_ORDER,
+  daily_metrics: DAILY_METRICS_COLUMN_ORDER,
 };

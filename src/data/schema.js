@@ -39,11 +39,21 @@ export const SCHEMA = {
       { name: "review",  type: "TEXT" },
     ],
   },
+  daily_metrics: {
+    columns: [
+      { name: "show_id",     type: "INT",     fk: "shows.id" },
+      { name: "metric_date", type: "DATE" },
+      { name: "views",       type: "INT" },
+      { name: "new_subs",    type: "INT" },
+      { name: "revenue",     type: "DECIMAL" },
+    ],
+  },
 };
 
 // Relationships (drawn as lines on the ER diagram).
 // `label` shows next to the line; `from`/`to` are table names.
 export const RELATIONSHIPS = [
-  { from: "episodes", fromCol: "show_id", to: "shows", toCol: "id", label: "belongs to" },
-  { from: "reviews",  fromCol: "show_id", to: "shows", toCol: "id", label: "reviews" },
+  { from: "episodes",      fromCol: "show_id", to: "shows", toCol: "id", label: "belongs to" },
+  { from: "reviews",       fromCol: "show_id", to: "shows", toCol: "id", label: "reviews" },
+  { from: "daily_metrics", fromCol: "show_id", to: "shows", toCol: "id", label: "metrics for" },
 ];

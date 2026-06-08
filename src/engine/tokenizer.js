@@ -19,7 +19,13 @@ export function tokenize(sql) {
       i = end + 1;
       continue;
     }
-    if (/[0-9]/.test(c) || (c === "-" && /[0-9]/.test(sql[i + 1] || ""))) {
+    // Numeric literal. A leading `-` only joins the number when we're in a
+    // unary position — start of input, or right after an operator/lparen/comma.
+    // Anywhere else (after a column name, `)`, or another value-end token) the
+    // `-` is binary subtraction and falls through to the op handler below.
+    const prev = tokens[tokens.length - 1];
+    const unaryPos = !prev || prev.type === "op" || prev.type === "lparen" || prev.type === "comma";
+    if (/[0-9]/.test(c) || (c === "-" && unaryPos && /[0-9]/.test(sql[i + 1] || ""))) {
       let end = i + (c === "-" ? 1 : 0);
       while (end < sql.length && /[0-9.]/.test(sql[end])) end++;
       tokens.push({ type: "number", value: parseFloat(sql.substring(i, end)) });
@@ -42,6 +48,7 @@ export function tokenize(sql) {
     if (c === "<" && sql[i + 1] === ">") { tokens.push({ type: "op", value: "!=" }); i += 2; continue; }
     if ((c === ">" || c === "<") && sql[i + 1] === "=") { tokens.push({ type: "op", value: c + "=" }); i += 2; continue; }
     if (c === "=" || c === ">" || c === "<") { tokens.push({ type: "op", value: c }); i++; continue; }
+    if (c === "+" || c === "-")             { tokens.push({ type: "op", value: c }); i++; continue; }
     throw new Error(`Unexpected character: ${c}`);
   }
   return tokens;

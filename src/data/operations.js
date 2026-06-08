@@ -12,15 +12,16 @@ export const OPERATIONS = {
   join:     { id: "join",     icon: "🔗", label: "CONNECT TABLES",  hint: "JOIN",     layer: 3 },
   subquery: { id: "subquery", icon: "🔎", label: "INNER QUERY",     hint: "subquery", layer: 4 },
   window:   { id: "window",   icon: "🪟", label: "WINDOW COMPUTE",  hint: "OVER ()",  layer: 5 },
+  cte:      { id: "cte",      icon: "📦", label: "INTERMEDIATE STEP", hint: "WITH",   layer: 5 },
 };
 
-export const OPERATIONS_LIST = ["filter", "select", "sort", "limit", "group", "having", "join", "subquery", "window"];
-export const UNLOCKED_THROUGH_LAYER = 4;
+export const OPERATIONS_LIST = ["filter", "select", "sort", "limit", "group", "having", "join", "subquery", "window", "cte"];
+export const UNLOCKED_THROUGH_LAYER = 5;
 
 // Canonical SQL execution order rank — lower = earlier.
 // Subquery is treated as ranking before FILTER: conceptually you compute the
 // inner query first, then use its result in WHERE.
-export const CANONICAL_RANK = { subquery: -1, filter: 0, group: 1, having: 2, select: 3, sort: 4, limit: 5 };
+export const CANONICAL_RANK = { cte: -2, subquery: -1, filter: 0, group: 1, having: 2, window: 2.5, select: 3, sort: 4, limit: 5 };
 
 export function validatePipeline(ops) {
   const seen = new Set();

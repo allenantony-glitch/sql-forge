@@ -38,6 +38,17 @@ export function computeFirstPhase(parsed, allColumns) {
   // Set operations (UNION / INTERSECT / EXCEPT) and derived-table queries don't
   // map onto the source-row animation — they reshape data the stage can't draw.
   if (!parsed || parsed.type === "set_operation" || parsed.derivedTable) return null;
+  // Non-aggregate queries with computed SELECT items (UPPER, SPLIT_PART,
+  // window functions, etc.) can't be projected onto source rows — the
+  // SELECT phase collapses every column that doesn't match a source-column
+  // name, leaving an empty table. Skip animation cleanly even when WHERE
+  // would otherwise be the first phase. (Aggregate and JOIN paths already
+  // skip SELECT and emerge into the final result.)
+  if (!parsed.isAggregate &&
+      parsed.selectItems &&
+      parsed.selectItems.some((it) => it.expr.type !== "col" && it.expr.type !== "star")) {
+    return null;
+  }
   if (parsed.where) return "filtering";
   if (parsed.isAggregate) {
     return parsed.groupBy && parsed.groupBy.length ? "grouping" : "merging";
