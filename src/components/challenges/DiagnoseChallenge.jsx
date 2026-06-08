@@ -67,8 +67,7 @@ export function DiagnoseOption({ opt, isSelected, status, isCorrect, onSelect, d
 
 export function DiagnoseChallenge({
   challenge,
-  sourceColumns,
-  sourceRows,
+  sourceTables,
   selectedId,
   onSelect,
   onDiagnose,
@@ -115,9 +114,20 @@ export function DiagnoseChallenge({
         </pre>
       </section>
 
-      {/* Source table — full width above the comparison */}
-      <div className="mb-4">
-        <DataTable title="shows" columns={sourceColumns} rows={sourceRows} variant="source" maxHeight="max-h-64" />
+      {/* Source tables — full width above the comparison. Multi-table diagnose
+          challenges (e.g. shows + episodes) need every referenced table visible
+          so the learner can reason about which columns belong where. */}
+      <div className={`mb-4 grid grid-cols-1 ${sourceTables.length > 1 ? "lg:grid-cols-2" : ""} gap-3`}>
+        {sourceTables.map((t) => (
+          <DataTable
+            key={t.name}
+            title={t.name}
+            columns={t.columns}
+            rows={t.rows}
+            variant="source"
+            maxHeight="max-h-64"
+          />
+        ))}
       </div>
 
       {/* Wrong + Expected side-by-side */}

@@ -16,6 +16,7 @@ export const GEMS = [
   { id: "count",      name: "Count",      color: "#e2e8f0", shape: "circle",    concept: "Aggregates",      layer: 2 },
   { id: "teacher",    name: "Teacher",    color: "#fafafa", shape: "circle",    concept: "Explaining" },
   { id: "bridge",     name: "Bridge",     color: "#06b6d4", shape: "bridge",    concept: "JOIN" },
+  { id: "nest",       name: "Nest",       color: "#eab308", shape: "circle",    concept: "Subqueries" },
   { id: "pathfinder", name: "Pathfinder", color: "#78716c", shape: "circle",    concept: "No scaffolding" },
   { id: "map",        name: "Map",        color: "#b45309", shape: "rectangle", concept: "Real-world translation" },
 ];
@@ -47,6 +48,13 @@ export const SYNTAX_TEMPLATES = [
   { id: "round",        gemId: "count",  keyword: "ROUND",            template: "ROUND(<value>, <decimals>)" },
   { id: "inner_join",   gemId: "bridge", keyword: "INNER JOIN",       template: "FROM <t1> <a1> INNER JOIN <t2> <a2> ON <a1.col> = <a2.col>" },
   { id: "left_join",    gemId: "bridge", keyword: "LEFT JOIN",        template: "FROM <t1> <a1> LEFT JOIN <t2> <a2> ON <a1.col> = <a2.col>" },
+  { id: "sub_where",    gemId: "nest",   keyword: "WHERE > (SELECT)", template: "WHERE <col> > (SELECT <agg>(<col>) FROM <table>)" },
+  { id: "sub_in",       gemId: "nest",   keyword: "IN (SELECT)",      template: "WHERE <col> IN (SELECT <col> FROM <table>)" },
+  { id: "sub_exists",   gemId: "nest",   keyword: "EXISTS",           template: "WHERE EXISTS (SELECT 1 FROM <table> WHERE ...)" },
+  { id: "sub_not_ex",   gemId: "nest",   keyword: "NOT EXISTS",       template: "WHERE NOT EXISTS (SELECT 1 FROM <table> WHERE ...)" },
+  { id: "sub_derived",  gemId: "nest",   keyword: "FROM (SELECT)",    template: "FROM (SELECT ... FROM <table>) AS <alias>" },
+  { id: "set_union",    gemId: "nest",   keyword: "UNION",            template: "SELECT ... UNION SELECT ..." },
+  { id: "set_except",   gemId: "nest",   keyword: "EXCEPT",           template: "SELECT ... EXCEPT SELECT ..." },
 ];
 
 // Brightness rules: walk every concept on the challenge and ratchet the gem up.

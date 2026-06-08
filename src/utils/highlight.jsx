@@ -6,7 +6,10 @@ export const SQL_KEYWORDS = [
   "select", "from", "where", "and", "or", "not", "is", "null", "like", "in", "between",
   "order", "by", "group", "having", "limit", "offset", "asc", "desc", "distinct",
   "join", "on", "inner", "left", "right", "outer", "full", "cross", "as",
-  "case", "when", "then", "else", "end", "union", "all", "exists",
+  "case", "when", "then", "else", "end", "union", "intersect", "except", "all", "exists",
+  // Aggregate + scalar functions the engine understands — colour these too so
+  // queries don't look half-highlighted.
+  "count", "sum", "avg", "min", "max", "round",
 ];
 export const KW_RE = new RegExp(`\\b(${SQL_KEYWORDS.join("|")})\\b`, "gi");
 

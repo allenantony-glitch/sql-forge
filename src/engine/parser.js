@@ -390,8 +390,10 @@ export function parseQuery(sql) {
     return { type: "compare_expr", left, op: opTok.value, value: right.value };
   }
 
-  // ----- one SELECT statement; recursive so it can also parse subqueries -----
-  function parseSelectStatement() {
+  // ----- one SELECT statement; recursive so it can also parse subqueries.
+  // `parseSelectCore` handles a single SELECT (no set operations); the wrapper
+  // `parseSelectStatement` below chains UNION/INTERSECT/EXCEPT left-associatively.
+  function parseSelectCore() {
     expectKeyword("select");
 
     let distinct = false;
@@ -564,6 +566,25 @@ export function parseQuery(sql) {
       limit,
       distinct,
     };
+  }
+
+  // ----- set-operation wrapper: SELECT ... [UNION|INTERSECT|EXCEPT [ALL] SELECT ...]* -----
+  function parseSelectStatement() {
+    let result = parseSelectCore();
+    while (
+      peek() && peek().type === "ident" &&
+      (peek().value === "union" || peek().value === "intersect" || peek().value === "except")
+    ) {
+      const op = consume().value;
+      let all = false;
+      if (peek() && peek().type === "ident" && peek().value === "all") {
+        consume();
+        all = true;
+      }
+      const right = parseSelectCore();
+      result = { type: "set_operation", op, all, left: result, right };
+    }
+    return result;
   }
 
   const result = parseSelectStatement();

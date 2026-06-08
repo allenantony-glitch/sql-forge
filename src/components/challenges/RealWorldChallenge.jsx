@@ -3,7 +3,7 @@ import { Map, Check, ChevronRight, X, Lightbulb, Wrench, Plus } from 'lucide-rea
 import { TABLES, TABLE_COLUMN_ORDER } from '../../data/shows';
 import { OPERATIONS, OPERATIONS_LIST, UNLOCKED_THROUGH_LAYER } from '../../data/operations';
 import { parseQuery } from '../../engine/parser';
-import { executeQuery } from '../../engine/executor';
+import { executeQuery, bindParsed } from '../../engine/executor';
 import { compareResults } from '../../engine/comparator';
 import { DataTable } from '../DataTable';
 import { SqlEditor } from '../SqlEditor';
@@ -270,8 +270,14 @@ export function RealWorldChallenge({
     }
     try {
       const parsed = parseQuery(query);
+      bindParsed(parsed, TABLES); // AnimationStage hand-rolls evalExpr on this AST
       const result = executeQuery(query, TABLES);
-      const isCorrect = compareResults(result, expectedResult);
+      let targetOrderMatters = false;
+      try {
+        const pt = parseQuery(challenge.targetSql);
+        targetOrderMatters = !!(pt.orderBy && pt.orderBy.length);
+      } catch { /* unreachable for valid targets */ }
+      const isCorrect = compareResults(result, expectedResult, targetOrderMatters);
       setActual(result);
       setErrorMessage(null);
       if (isCorrect) {
@@ -281,9 +287,10 @@ export function RealWorldChallenge({
           setAnimationPhase("idle");
         } else {
           const hasJoin = (parsed.joins || []).length > 0;
+          const isDerived = !!parsed.derivedTable;
           const fromTable = parsed.table;
           const animSourceCols = TABLE_COLUMN_ORDER[fromTable] || [];
-          const first = hasJoin ? "joining" : computeFirstPhase(parsed, animSourceCols);
+          const first = isDerived ? null : (hasJoin ? "joining" : computeFirstPhase(parsed, animSourceCols));
           if (first) {
             setAnimationParsed(parsed);
             setAnimationPhase(first);

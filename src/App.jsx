@@ -5,7 +5,7 @@ import { GEMS, GEM_BY_ID, nextGemLevel } from './data/gems';
 import { validatePipeline, pipelineMatchesExpected } from './data/operations';
 import { TABLES, TABLE_COLUMN_ORDER, SHOWS_DATA, SHOW_COLUMN_ORDER } from './data/shows';
 import { parseQuery } from './engine/parser';
-import { executeQuery } from './engine/executor';
+import { executeQuery, bindParsed } from './engine/executor';
 import { compareResults, validateExplanation, diagnosePredict } from './engine/comparator';
 import { GemBelt } from './components/GemBelt';
 import { LayerMap } from './components/LayerMap';
@@ -242,8 +242,15 @@ export default function App() {
     }
     try {
       const parsed = parseQuery(query);
+      bindParsed(parsed, TABLES); // AnimationStage hand-rolls evalExpr on this AST
       const actual = executeQuery(query, TABLES);
-      if (compareResults(actual, expectedResult)) {
+      // The target's ORDER BY is what makes order matter; derive once per check.
+      let targetOrderMatters = false;
+      try {
+        const parsedTarget = parseQuery(challenge.targetSql);
+        targetOrderMatters = !!(parsedTarget.orderBy && parsedTarget.orderBy.length);
+      } catch { /* unreachable for valid targets */ }
+      if (compareResults(actual, expectedResult, targetOrderMatters)) {
         setStatusById((s) => ({ ...s, [challenge.id]: "correct" }));
         setActualByCurrent(actual);
         setErrorByCurrent(null);
@@ -254,8 +261,15 @@ export default function App() {
           setAnimationParsed(null);
           setAnimationPhase("idle");
         } else {
-          const hasJoin = (parsed.joins || []).length > 0;
-          const first = hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns);
+          const isSetOp = parsed.type === "set_operation";
+          const hasJoin = !isSetOp && (parsed.joins || []).length > 0;
+          // AnimationStage walks `sourceRows` (the picker table). A derived-table
+          // query's outer scope refers to the subquery's output columns, which
+          // don't exist on the picker row — animating would just drop every row.
+          // UNION/INTERSECT/EXCEPT can't be animated against a single source either.
+          // Skip cleanly instead.
+          const isDerived = !isSetOp && !!parsed.derivedTable;
+          const first = (isSetOp || isDerived) ? null : (hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns));
           if (first) {
             setAnimationParsed(parsed);
             setAnimationPhase(first); // AnimationStage takes over from here
@@ -385,8 +399,10 @@ export default function App() {
       } else {
         try {
           const parsed = parseQuery(challenge.targetSql);
+          bindParsed(parsed, TABLES); // AnimationStage hand-rolls evalExpr on this AST
           const hasJoin = (parsed.joins || []).length > 0;
-          const first = hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns);
+          const isDerived = !!parsed.derivedTable;
+          const first = isDerived ? null : (hasJoin ? "joining" : computeFirstPhase(parsed, sourceColumns));
           if (first) {
             setAnimationParsed(parsed);
             setAnimationPhase(first);
@@ -569,10 +585,12 @@ export default function App() {
 
   // Layer 1 keeps the warm-amber surface tint; Layer 2 deepens into cool blues;
   // Layer 3 brings two-tone cyan/teal — the crossroads where tunnels meet.
+  // Layer 4 drops into the deeper shafts — darker stone, amber lantern glow.
   const LAYER_BACKGROUNDS = {
     1: "radial-gradient(1200px 600px at 20% -10%, rgba(120, 53, 15, 0.15), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(8, 47, 73, 0.18), transparent 60%), linear-gradient(180deg, #0c0a09 0%, #1c1917 100%)",
     2: "radial-gradient(1200px 600px at 20% -10%, rgba(30, 64, 175, 0.22), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(14, 116, 144, 0.22), transparent 60%), linear-gradient(180deg, #0b1120 0%, #0f172a 100%)",
     3: "radial-gradient(900px 500px at 0% 10%, rgba(20, 184, 166, 0.18), transparent 60%), radial-gradient(900px 500px at 100% 30%, rgba(168, 85, 247, 0.16), transparent 60%), linear-gradient(180deg, #082f49 0%, #0f172a 100%)",
+    4: "radial-gradient(1200px 600px at 20% -10%, rgba(180, 83, 9, 0.12), transparent 60%), radial-gradient(900px 500px at 110% 20%, rgba(120, 53, 15, 0.15), transparent 60%), linear-gradient(180deg, #0c0a09 0%, #1c1917 100%)",
   };
   const layerName = LAYERS[challenge.layer - 1]?.name || "Unknown";
 
@@ -619,8 +637,7 @@ export default function App() {
           {isDiagnose && (
             <DiagnoseChallenge
               challenge={challenge}
-              sourceColumns={sourceColumns}
-              sourceRows={sourceRows}
+              sourceTables={sourceTables}
               selectedId={diagnoseSelected}
               onSelect={selectDiagnoseOption}
               onDiagnose={handleDiagnoseSubmit}

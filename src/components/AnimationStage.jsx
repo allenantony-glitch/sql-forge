@@ -35,6 +35,9 @@ export const GROUP_TINTS = [
 ];
 
 export function computeFirstPhase(parsed, allColumns) {
+  // Set operations (UNION / INTERSECT / EXCEPT) and derived-table queries don't
+  // map onto the source-row animation — they reshape data the stage can't draw.
+  if (!parsed || parsed.type === "set_operation" || parsed.derivedTable) return null;
   if (parsed.where) return "filtering";
   if (parsed.isAggregate) {
     return parsed.groupBy && parsed.groupBy.length ? "grouping" : "merging";
@@ -81,8 +84,9 @@ export function AnimationStage({ parsed, sourceColumns, sourceRows, finalResult,
       if (parsed.where) {
         announce("filtering");
         const drop = new Set();
+        const ctx = { tables: TABLES };
         sourceRows.forEach((r, i) => {
-          if (!evalExpr(parsed.where, r)) drop.add(i);
+          if (!evalExpr(parsed.where, r, ctx)) drop.add(i);
         });
         setHiddenRows(drop);
         const maxStagger = Math.max(0, drop.size - 1) * 50;
